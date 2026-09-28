@@ -11,10 +11,15 @@ type UserResponse = { user: User };
 
 /**
  * Génère un secret et son QR code. La 2FA n'est pas encore active.
+ * Le mot de passe est exigé : une session volée ne suffit pas à activer la 2FA.
+ * @param password mot de passe actuel
  * @returns {Promise<TwoFactorSetup>}
  */
-export async function setupTwoFactor(): Promise<TwoFactorSetup> {
-  return apiFetch<TwoFactorSetup>('/api/users/me/2fa/setup', { method: 'POST' });
+export async function setupTwoFactor(password: string): Promise<TwoFactorSetup> {
+  return apiFetch<TwoFactorSetup>('/api/users/me/2fa/setup', {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  });
 }
 
 /**

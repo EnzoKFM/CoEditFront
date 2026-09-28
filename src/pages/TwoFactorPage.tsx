@@ -41,15 +41,19 @@ export function TwoFactorPage() {
 function EnableTwoFactor() {
   const { updateUser } = useAuth();
   const [setup, setSetup] = useState<TwoFactorSetup | null>(null);
+  const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  async function handleStart() {
+  // Le mot de passe est exigé par l'API avant de générer le QR code
+  async function handleStart(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setError(null);
     setIsSubmitting(true);
     try {
-      setSetup(await setupTwoFactor());
+      setSetup(await setupTwoFactor(password));
+      setPassword('');
     } catch (setupError) {
       setError(getErrorMessage(setupError));
     } finally {
@@ -79,16 +83,30 @@ function EnableTwoFactor() {
 
   if (!setup) {
     return (
-      <div className="space-y-4">
+      <form onSubmit={handleStart} className="space-y-5" noValidate>
+        <div>
+          <label htmlFor="setup-password" className={labelClass}>
+            Mot de passe
+          </label>
+          <input
+            id="setup-password"
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className={inputClass}
+          />
+        </div>
         {error && (
           <p role="alert" className={errorClass}>
             {error}
           </p>
         )}
-        <button type="button" onClick={handleStart} disabled={isSubmitting} className={primaryButtonClass}>
+        <button type="submit" disabled={isSubmitting} className={primaryButtonClass}>
           {isSubmitting ? 'Préparation…' : 'Activer la double authentification'}
         </button>
-      </div>
+      </form>
     );
   }
 
