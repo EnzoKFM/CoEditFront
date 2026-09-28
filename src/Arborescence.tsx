@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import "./Arborescence.css";
 
 type Node = {
     id: number;
@@ -27,21 +26,41 @@ function Arborescence() {
 
     useEffect(() => {
         fetch("http://localhost:3000/api/folders/root/children")
-            .then((response) => response.json())
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error("Impossible de charger l'arborescence");
+                }
+
+                return response.json();
+            })
             .then((data) => {
                 setFolders(data.children);
                 setBreadcrumb([]);
+            })
+            .catch((error) => {
+                console.error(error);
+                alert("Impossible de charger l'arborescence.");
             });
     }, []);
 
     function openFolder(folderId: number) {
         fetch(`http://localhost:3000/api/folders/${folderId}/children`)
-            .then((response) => response.json())
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error("Impossible de charger le dossier");
+                }
+
+                return response.json();
+            })
             .then((data) => {
                 setFolders(data.children);
                 setCurrentFolder(folderId);
                 setCurrentFolderData(data.folder);
                 setBreadcrumb(data.breadcrumb);
+            })
+            .catch((error) => {
+                console.error(error);
+                alert("Impossible d'ouvrir ce dossier.");
             });
     }
 
@@ -51,15 +70,7 @@ function Arborescence() {
         }
 
         if (currentFolderData.parentId === null) {
-            fetch("http://localhost:3000/api/folders/root/children")
-                .then((response) => response.json())
-                .then((data) => {
-                    setFolders(data.children);
-                    setCurrentFolder(null);
-                    setCurrentFolderData(null);
-                    setBreadcrumb([]);
-                });
-
+            openRoot();
             return;
         }
 
@@ -84,19 +95,39 @@ function Arborescence() {
                 name: name,
             }),
         })
-            .then((response) => response.json())
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error("Impossible de créer le dossier");
+                }
+
+                return response.json();
+            })
             .then((data) => {
                 console.log(data);
 
                 if (currentFolder === null) {
-                    fetch("http://localhost:3000/api/folders/root/children")
-                        .then((response) => response.json())
+                    return fetch(
+                        "http://localhost:3000/api/folders/root/children"
+                    )
+                        .then((response) => {
+                            if (!response.ok) {
+                                throw new Error(
+                                    "Impossible de recharger l'arborescence"
+                                );
+                            }
+
+                            return response.json();
+                        })
                         .then((data) => {
                             setFolders(data.children);
                         });
-                } else {
-                    openFolder(currentFolder);
                 }
+
+                openFolder(currentFolder);
+            })
+            .catch((error) => {
+                console.error(error);
+                alert("Impossible de créer le dossier.");
             });
     }
 
@@ -118,19 +149,39 @@ function Arborescence() {
                 name: name,
             }),
         })
-            .then((response) => response.json())
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error("Impossible de créer le fichier");
+                }
+
+                return response.json();
+            })
             .then((data) => {
                 console.log(data);
 
                 if (currentFolder === null) {
-                    fetch("http://localhost:3000/api/folders/root/children")
-                        .then((response) => response.json())
+                    return fetch(
+                        "http://localhost:3000/api/folders/root/children"
+                    )
+                        .then((response) => {
+                            if (!response.ok) {
+                                throw new Error(
+                                    "Impossible de recharger l'arborescence"
+                                );
+                            }
+
+                            return response.json();
+                        })
                         .then((data) => {
                             setFolders(data.children);
                         });
-                } else {
-                    openFolder(currentFolder);
                 }
+
+                openFolder(currentFolder);
+            })
+            .catch((error) => {
+                console.error(error);
+                alert("Impossible de créer le fichier.");
             });
     }
 
@@ -150,19 +201,39 @@ function Arborescence() {
                 name: newName,
             }),
         })
-            .then((response) => response.json())
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error("Impossible de renommer cet élément");
+                }
+
+                return response.json();
+            })
             .then((data) => {
                 console.log(data);
 
                 if (currentFolder === null) {
-                    fetch("http://localhost:3000/api/folders/root/children")
-                        .then((response) => response.json())
+                    return fetch(
+                        "http://localhost:3000/api/folders/root/children"
+                    )
+                        .then((response) => {
+                            if (!response.ok) {
+                                throw new Error(
+                                    "Impossible de recharger l'arborescence"
+                                );
+                            }
+
+                            return response.json();
+                        })
                         .then((data) => {
                             setFolders(data.children);
                         });
-                } else {
-                    openFolder(currentFolder);
                 }
+
+                openFolder(currentFolder);
+            })
+            .catch((error) => {
+                console.error(error);
+                alert("Impossible de renommer cet élément.");
             });
     }
 
@@ -182,14 +253,24 @@ function Arborescence() {
                 }
 
                 if (currentFolder === null) {
-                    fetch("http://localhost:3000/api/folders/root/children")
-                        .then((response) => response.json())
+                    return fetch(
+                        "http://localhost:3000/api/folders/root/children"
+                    )
+                        .then((response) => {
+                            if (!response.ok) {
+                                throw new Error(
+                                    "Impossible de recharger l'arborescence"
+                                );
+                            }
+
+                            return response.json();
+                        })
                         .then((data) => {
                             setFolders(data.children);
                         });
-                } else {
-                    openFolder(currentFolder);
                 }
+
+                openFolder(currentFolder);
             })
             .catch((error) => {
                 console.error(error);
@@ -210,6 +291,11 @@ function Arborescence() {
                     : `http://localhost:3000/api/folders/${parentId}/children`;
 
             const response = await fetch(url);
+
+            if (!response.ok) {
+                throw new Error("Impossible de charger les dossiers");
+            }
+
             const data = await response.json();
 
             for (const item of data.children) {
@@ -263,14 +349,24 @@ function Arborescence() {
                 setSelectedMoveFolder(null);
 
                 if (currentFolder === null) {
-                    fetch("http://localhost:3000/api/folders/root/children")
-                        .then((response) => response.json())
+                    return fetch(
+                        "http://localhost:3000/api/folders/root/children"
+                    )
+                        .then((response) => {
+                            if (!response.ok) {
+                                throw new Error(
+                                    "Impossible de recharger l'arborescence"
+                                );
+                            }
+
+                            return response.json();
+                        })
                         .then((data) => {
                             setFolders(data.children);
                         });
-                } else {
-                    openFolder(currentFolder);
                 }
+
+                openFolder(currentFolder);
             })
             .catch((error) => {
                 console.error(error);
@@ -278,23 +374,44 @@ function Arborescence() {
             });
     }
 
+    function openRoot() {
+        fetch("http://localhost:3000/api/folders/root/children")
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error("Impossible de charger la racine");
+                }
+
+                return response.json();
+            })
+            .then((data) => {
+                setFolders(data.children);
+                setCurrentFolder(null);
+                setCurrentFolderData(null);
+                setBreadcrumb([]);
+            })
+            .catch((error) => {
+                console.error(error);
+                alert("Impossible de revenir à la racine.");
+            });
+    }
+
     return (
         <div>
-            <div className="arbo-header">
+            <div className="flex items-center justify-between mb-5">
                 <div>
-                    <h1>📁 Arborescence</h1>
+                    <h1 className="m-0 mb-1.5 text-3xl font-semibold">📁 Arborescence</h1>
                 </div>
 
-                <div className="header-actions">
+                <div className="flex gap-2.5">
                     <button
-                        className="create-button"
+                       className="border-0 rounded-md px-3.5 py-2.5 bg-blue-600 text-white text-sm cursor-pointer hover:bg-blue-700"
                         onClick={createFolder}
                     >
                         ➕ Nouveau dossier
                     </button>
 
                     <button
-                        className="create-button"
+                        className="border-0 rounded-md px-3.5 py-2.5 bg-blue-600 text-white text-sm cursor-pointer hover:bg-blue-700"
                         onClick={createFile}
                     >
                         📄 Nouveau fichier
@@ -302,31 +419,22 @@ function Arborescence() {
                 </div>
             </div>
 
-            <div className="breadcrumb">
+            <div className="flex items-center gap-1.5 mb-4 text-sm">
                 <button
-                    className="breadcrumb-item"
-                    onClick={() => {
-                        fetch("http://localhost:3000/api/folders/root/children")
-                            .then((response) => response.json())
-                            .then((data) => {
-                                setFolders(data.children);
-                                setCurrentFolder(null);
-                                setCurrentFolderData(null);
-                                setBreadcrumb([]);
-                            });
-                    }}
+                    className="border-0 rounded-md px-3.5 py-2.5 bg-blue-600 text-white text-sm cursor-pointer hover:bg-blue-700"
+                    onClick={openRoot}
                 >
                     🏠 Racine
                 </button>
 
                 {breadcrumb.map((item) => (
                     <span key={item.id}>
-                        <span className="breadcrumb-separator">
+                        <span className="text-gray-400 mx-0.5">
                             &gt;
                         </span>
 
                         <button
-                            className="breadcrumb-item"
+                            className="border-0 bg-transparent px-1.5 py-1 text-blue-600 cursor-pointer text-sm hover:underline"
                             onClick={() => openFolder(item.id)}
                         >
                             {item.name}
@@ -337,7 +445,7 @@ function Arborescence() {
 
             {currentFolder !== null && (
                 <button
-                    className="back-button"
+                    className="border border-gray-300 rounded-md px-3 py-2 mb-4 bg-white text-gray-700 cursor-pointer hover:bg-gray-100"
                     onClick={goBack}
                 >
                     ← Retour
@@ -348,25 +456,26 @@ function Arborescence() {
                 {folders.map((folder) => (
                     <div
                         key={folder.id}
-                        className="node-row"
+                        className="flex items-center justify-between p-3 mb-2 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
                         onClick={() => {
                             if (folder.type === "folder") {
                                 openFolder(folder.id);
                             }
                         }}
                     >
-                        <div className="node-info">
-                            <span className="node-icon">
+                        <div className="flex items-center gap-2.5">
+                            <span className="text-xl">
                                 {folder.type === "folder" ? "📁" : "📄"}
                             </span>
 
-                            <span className="node-name">
+                            <span className="text-[15px] text-gray-700">
                                 {folder.name}
                             </span>
                         </div>
 
-                        <div className="node-actions">
+                        <div className="flex items-center gap-1.5">
                             <button
+                                className="border-0 bg-transparent p-1 rounded cursor-pointer text-base hover:bg-gray-200"
                                 onClick={(event) => {
                                     event.stopPropagation();
                                     renameNode(folder.id, folder.name);
@@ -377,6 +486,7 @@ function Arborescence() {
                             </button>
 
                             <button
+                                className="border-0 bg-transparent p-1 rounded cursor-pointer text-base hover:bg-gray-200"
                                 onClick={(event) => {
                                     event.stopPropagation();
                                     moveNode(folder.id, folder.name);
@@ -387,6 +497,7 @@ function Arborescence() {
                             </button>
 
                             <button
+                                className="border-0 bg-transparent p-1 rounded cursor-pointer text-base hover:bg-gray-200"
                                 onClick={(event) => {
                                     event.stopPropagation();
                                     deleteNode(folder.id, folder.name);
@@ -400,13 +511,13 @@ function Arborescence() {
                 ))}
             </div>
             {showMoveModal && (
-                <div className="modal-overlay">
-                    <div className="move-modal">
-                        <div className="move-modal-header">
-                            <h2>Déplacer "{moveNodeName}"</h2>
+                <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/45">
+                    <div className="w-[500px] max-w-[90%] overflow-hidden rounded-xl bg-white shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+                            <h2 className="m-0 text-xl font-semibold">Déplacer "{moveNodeName}"</h2>
 
                             <button
-                                className="modal-close"
+                                className="rounded border-0 bg-transparent p-1 text-lg cursor-pointer hover:bg-gray-100"
                                 onClick={() => {
                                     setShowMoveModal(false);
                                     setSelectedMoveFolder(null);
@@ -416,17 +527,17 @@ function Arborescence() {
                             </button>
                         </div>
 
-                        <p className="move-modal-description">
+                        <p className="m-0 px-5 pb-2 pt-4 text-gray-500">
                             Choisissez le dossier de destination :
                         </p>
 
-                        <div className="folder-tree">
+                        <div className="max-h-[350px] overflow-y-auto px-2.5 py-1">
                             {moveFolders.map((folder) => (
                                 <button
                                     key={folder.id}
-                                    className={`folder-option ${
+                                    className={`block w-full rounded-md border-0 bg-transparent py-2 text-left text-sm cursor-pointer hover:bg-gray-100 ${
                                         selectedMoveFolder === folder.id
-                                            ? "selected"
+                                            ? "bg-blue-100 text-blue-700 font-semibold"
                                             : ""
                                     }`}
                                     style={{
@@ -441,9 +552,9 @@ function Arborescence() {
                             ))}
                         </div>
 
-                        <div className="move-modal-footer">
+                        <div className="flex justify-end gap-2.5 border-t border-gray-200 px-5 py-4">
                             <button
-                                className="cancel-button"
+                                className="rounded-md border border-gray-300 bg-white px-3.5 py-2 text-gray-700 cursor-pointer hover:bg-gray-100"
                                 onClick={() => {
                                     setShowMoveModal(false);
                                     setSelectedMoveFolder(null);
@@ -453,7 +564,7 @@ function Arborescence() {
                             </button>
 
                             <button
-                                className="move-button"
+                                className="rounded-md border-0 bg-blue-600 px-3.5 py-2 text-white cursor-pointer hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
                                 disabled={selectedMoveFolder === null}
                                 onClick={confirmMove}
                             >
