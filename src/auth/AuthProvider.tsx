@@ -18,7 +18,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    setUser(await authApi.login(email, password));
+    const result = await authApi.login(email, password);
+    // 2FA active : la session n'est pas encore ouverte, on attend le code
+    if ('twoFactorRequired' in result) {
+      return { twoFactorRequired: true };
+    }
+    setUser(result.user);
+    return { twoFactorRequired: false };
+  }, []);
+
+  const verifyTwoFactorCode = useCallback(async (code: string) => {
+    setUser(await authApi.loginWithTwoFactor(code));
   }, []);
 
   const logout = useCallback(async () => {
@@ -26,7 +36,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
-  const value = useMemo(() => ({ user, isLoading, login, logout }), [user, isLoading, login, logout]);
+  const value = useMemo(
+    () => ({ user, isLoading, login, verifyTwoFactorCode, logout, updateUser: setUser }),
+    [user, isLoading, login, verifyTwoFactorCode, logout],
+  );
 
   return <AuthContext value={value}>{children}</AuthContext>;
 }

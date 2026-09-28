@@ -11,6 +11,15 @@ export class ApiError extends Error {
   }
 }
 
+// Message à afficher à l'utilisateur : ceux des erreurs 4xx de l'API lui sont destinés,
+// pas ceux des 5xx (erreur interne) ni des erreurs inconnues.
+export function getErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.status < 500) {
+    return error.message;
+  }
+  return 'Une erreur est survenue, réessayez plus tard';
+}
+
 // Appel à l'API : envoie le cookie de session et transforme les erreurs en ApiError
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);

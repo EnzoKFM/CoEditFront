@@ -1,5 +1,10 @@
-import { Outlet } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth/authContext';
+
+// Style d'un lien du menu : surligné quand c'est la page courante
+function navLinkClass({ isActive }: { isActive: boolean }) {
+  return isActive ? 'font-medium text-indigo-600' : 'text-slate-600 hover:text-slate-900';
+}
 
 // Header avec le nom de l'utilisateur connecté et un bouton de déconnexion
 export function AppLayout() {
@@ -9,7 +14,16 @@ export function AppLayout() {
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 sm:px-8">
-          <span className="font-semibold text-indigo-600">CoEdit</span>
+          <nav className="flex items-center gap-6 text-sm">
+            <span className="font-semibold text-indigo-600">CoEdit</span>
+            <NavLink to="/" end className={navLinkClass}>
+              Accueil
+            </NavLink>
+            {/* Le libellé suit l'état : "Activer" serait faux une fois l'A2F active */}
+            <NavLink to="/a2f" className={navLinkClass}>
+              {user?.totpEnabled ? "Gérer l'A2F" : "Activer l'A2F"}
+            </NavLink>
+          </nav>
           <div className="flex items-center gap-4 text-sm">
             <span className="text-slate-600">
               {user?.firstName} {user?.lastName}

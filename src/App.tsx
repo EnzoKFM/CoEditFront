@@ -4,6 +4,7 @@ import { RequireAuth } from "./auth/RequireAuth";
 import { useAuth } from "./auth/authContext";
 import { AppLayout } from "./components/AppLayout";
 import { LoginPage } from "./pages/LoginPage";
+import { TwoFactorPage } from "./pages/TwoFactorPage";
 
 function Home() {
   const { user } = useAuth();
@@ -24,9 +25,10 @@ function App() {
           {/* Toutes les pages ci-dessous exigent d'être connecté */}
           <Route element={<RequireAuth />}>
             <Route element={<AppLayout />}>
-              <Route path="/" element={<Home />} />
-
               {/* Mettre toutes les routes ici */}
+              <Route path="/" element={<Home />} />
+              <Route path="/a2f" element={<TwoFactorPage />} />
+
             </Route>
           </Route>
 
