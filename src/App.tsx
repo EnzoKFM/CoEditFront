@@ -1,9 +1,12 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthProvider";
+import { RequireAdmin } from "./auth/RequireAdmin";
 import { RequireAuth } from "./auth/RequireAuth";
 import { useAuth } from "./auth/authContext";
 import { AppLayout } from "./components/AppLayout";
+import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { LoginPage } from "./pages/LoginPage";
+import { ProfilePage } from "./pages/ProfilePage";
 import { TwoFactorPage } from "./pages/TwoFactorPage";
 
 function Home() {
@@ -28,6 +31,12 @@ function App() {
               {/* Mettre toutes les routes ici */}
               <Route path="/" element={<Home />} />
               <Route path="/a2f" element={<TwoFactorPage />} />
+              <Route path="/profil" element={<ProfilePage />} />
+
+              {/* Pages réservées aux administrateurs */}
+              <Route element={<RequireAdmin />}>
+                <Route path="/admin/utilisateurs" element={<AdminUsersPage />} />
+              </Route>
 
             </Route>
           </Route>

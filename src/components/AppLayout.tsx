@@ -23,6 +23,14 @@ export function AppLayout() {
             <NavLink to="/a2f" className={navLinkClass}>
               {user?.totpEnabled ? "Gérer l'A2F" : "Activer l'A2F"}
             </NavLink>
+            <NavLink to="/profil" className={navLinkClass}>
+              Mon profil
+            </NavLink>
+            {user?.role === 'admin' && (
+              <NavLink to="/admin/utilisateurs" className={navLinkClass}>
+                Utilisateurs
+              </NavLink>
+            )}
           </nav>
           <div className="flex items-center gap-4 text-sm">
             <span className="text-slate-600">
