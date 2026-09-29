@@ -1,4 +1,4 @@
-﻿# CoEdit Front
+# CoEditFront
 
 Interface React, TypeScript et Tailwind de CoEdit.
 
@@ -11,10 +11,43 @@ npm ci
 npm run dev
 ```
 
-Copier `.env.example` vers `.env` et adapter `VITE_API_URL` si besoin.
-Le back doit être démarré et son `CLIENT_URL` doit correspondre à l’adresse du front
-(par défaut `http://localhost:5173`). Utiliser le même nom d’hôte pour les deux :
-par exemple `localhost`, sans le mélanger avec `127.0.0.1`.
+
+L'API (dépôt CoEditBack) doit tourner sur `http://localhost:3000`.
+
+### Comment le front parle à l'API
+
+Le navigateur n'appelle jamais l'API directement : il envoie ses requêtes au serveur Vite, qui les fait suivre à l'API.
+
+```
+Navigateur ──/api/...──► Serveur Vite (port 5173) ──► API (port 3000)
+```
+
+Pour le navigateur, tout vient du même site : le cookie de session est bien envoyé, et il n'y a pas de CORS à gérer.
+
+| Variable | Utilisée par | Rôle | Valeur |
+|---|---|---|---|
+| `VITE_API_URL` | le **navigateur** | Adresse où le navigateur envoie ses appels. Vide = au serveur Vite, c'est-à-dire au site visité | **vide** |
+| `API_PROXY_TARGET` | le **serveur Vite** | Adresse où Vite fait suivre les appels `/api` et `/socket.io` | `http://localhost:3000` |
+
+Ne pas mettre `http://localhost:3000` dans `VITE_API_URL` : via ngrok, `localhost` désignerait l'ordinateur du visiteur, pas celui qui fait tourner l'API.
+
+## Tester à plusieurs avec ngrok
+
+Une seule personne expose l'application ; tout le monde utilise son API et sa base.
+
+1. Lancer l'API (CoEditBack) avec `TRUST_PROXY=2` dans son `.env` (ngrok + proxy de Vite), puis le front avec `npm run dev`.
+2. Exposer **uniquement le front** :
+   ```bash
+   ngrok http 5173
+   ```
+3. Partager l'URL `https://….ngrok-free.app` affichée. À la première visite, ngrok affiche une page d'avertissement : cliquer sur « Visit Site ».
+
+Ne pas créer de second tunnel pour l'API : les sous-domaines `ngrok-free.app` sont des sites différents pour le navigateur, qui n'enverrait pas le cookie de session d'un tunnel à l'autre.
+
+L'URL est publique : utiliser un vrai mot de passe administrateur, et couper le tunnel (`Ctrl+C`) après les tests. Remettre ensuite `TRUST_PROXY` à vide.
+
+---
+
 
 La connexion utilise le cookie de session du back. Les comptes sont créés par un administrateur.
 
