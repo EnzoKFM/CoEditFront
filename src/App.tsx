@@ -1,18 +1,23 @@
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { AuthProvider } from "./auth/AuthProvider";
+import { RequireAdmin } from "./auth/RequireAdmin";
+import { RequireAuth } from "./auth/RequireAuth";
+import { useAuth } from "./auth/authContext";
+import { AppLayout } from "./components/AppLayout";
+import { AdminUsersPage } from "./pages/AdminUsersPage";
+import { LoginPage } from "./pages/LoginPage";
+import { ProfilePage } from "./pages/ProfilePage";
+import { TwoFactorPage } from "./pages/TwoFactorPage";
 import Arborescence from "./Arborescence";
 import { DocumentEditor } from "./components/editor";
 
 function Home() {
-    return (
-        <div>
-            <h1>
-                Accueil
-            </h1>
-            <p>
-                Bienvenue sur l'application.
-            </p>
-        </div>
-    );
+  const { user } = useAuth();
+  return (
+    <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+      Bienvenue {user?.firstName}
+    </h1>
+  );
 }
 
 function EditorPage() {
@@ -32,29 +37,35 @@ function EditorPage() {
 }
 
 function App() {
-    return (
-        <BrowserRouter>
-            <nav aria-label="Navigation principale" className="flex flex-wrap gap-5 border-b border-slate-200 bg-white px-6 py-4 text-sm font-medium text-indigo-700">
-                <Link to="/">
-                    Accueil
-                </Link>
-                <Link to="/arborescence">
-                    Arborescence
-                </Link>
-                <Link to="/editor">
-                    Éditeur
-                </Link>
-            </nav>
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
 
-            <main className="px-4 py-8 sm:px-8">
-                <Routes>
-                    <Route path="/" element={<Home />} />
-                    <Route path="/arborescence" element={<Arborescence />} />
-                    <Route path="/editor" element={<EditorPage />} />
-                </Routes>
-            </main>
-        </BrowserRouter>
-    );
+          {/* Toutes les pages ci-dessous exigent d'être connecté */}
+          <Route element={<RequireAuth />}>
+            <Route element={<AppLayout />}>
+              {/* Mettre toutes les routes ici */}
+              <Route path="/" element={<Home />} />
+              <Route path="/arborescence" element={<Arborescence />} />
+              <Route path="/editor" element={<EditorPage />} />
+              <Route path="/a2f" element={<TwoFactorPage />} />
+              <Route path="/profil" element={<ProfilePage />} />
+
+              {/* Pages réservées aux administrateurs */}
+              <Route element={<RequireAdmin />}>
+                <Route path="/admin/utilisateurs" element={<AdminUsersPage />} />
+              </Route>
+
+            </Route>
+          </Route>
+
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
+  );
 }
 
 export default App;
