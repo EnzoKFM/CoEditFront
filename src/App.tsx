@@ -8,6 +8,8 @@ import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { TwoFactorPage } from "./pages/TwoFactorPage";
+import Arborescence from "./Arborescence";
+import { DocumentEditor } from "./components/editor";
 
 function Home() {
   const { user } = useAuth();
@@ -16,6 +18,22 @@ function Home() {
       Bienvenue {user?.firstName}
     </h1>
   );
+}
+
+function EditorPage() {
+    return (
+        <div className="mx-auto max-w-5xl">
+            <header className="mb-6">
+                <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+                    Éditeur de document
+                </h1>
+                <p className="mt-2 text-sm text-slate-500">
+                    Édition locale · Le contenu est perdu en quittant cette page ou en la rechargeant.
+                </p>
+            </header>
+            <DocumentEditor />
+        </div>
+    );
 }
 
 function App() {
@@ -30,6 +48,8 @@ function App() {
             <Route element={<AppLayout />}>
               {/* Mettre toutes les routes ici */}
               <Route path="/" element={<Home />} />
+              <Route path="/arborescence" element={<Arborescence />} />
+              <Route path="/editor" element={<EditorPage />} />
               <Route path="/a2f" element={<TwoFactorPage />} />
               <Route path="/profil" element={<ProfilePage />} />
 
