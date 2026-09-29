@@ -1,4 +1,6 @@
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+// Vide par défaut : les appels partent en relatif (/api/...) et passent par le proxy de Vite.
+// À renseigner seulement si le front est servi sans ce proxy (ex : build de production sur un autre domaine).
+const API_URL = import.meta.env.VITE_API_URL ?? '';
 
 // Erreur renvoyée par l'API : status HTTP + message lisible
 export class ApiError extends Error {
