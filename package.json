@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test:audio": "node --test tests/audioCallClient.test.mjs",
+    "test:documents": "node --test tests/documentSessionClient.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

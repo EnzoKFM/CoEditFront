@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "./lib/api";
 
-type Node = {
+export type DocumentNode = {
     id: number;
     name: string;
     type: "folder" | "file";
@@ -20,11 +20,20 @@ type FolderResponse = {
         id: number;
         name: string;
     }[];
-    children: Node[];
+    children: DocumentNode[];
 };
 
-function Arborescence() {
-    const [folders, setFolders] = useState<Node[]>([]);
+interface ArborescenceProps {
+    selectedFileId?: number;
+    onFileSelect?: (file: DocumentNode, ancestorIds: number[]) => void;
+    onNodeRenamed?: (nodeId: number, name: string) => void;
+    onNodeDeleted?: (nodeId: number) => void;
+    onNodeMoved?: (nodeId: number, ancestorIds: number[]) => void;
+    canDeleteNode?: (nodeId: number) => boolean;
+}
+
+function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDeleted, onNodeMoved, canDeleteNode }: ArborescenceProps) {
+    const [folders, setFolders] = useState<DocumentNode[]>([]);
     const [currentFolder, setCurrentFolder] = useState<number | null>(null);
     const [currentFolderData, setCurrentFolderData] = useState<{
         id: number;
@@ -33,7 +42,7 @@ function Arborescence() {
     } | null>(null);
     const [moveNodeId, setMoveNodeId] = useState<number | null>(null);
     const [moveNodeName, setMoveNodeName] = useState("");
-    const [moveFolders, setMoveFolders] = useState<(Node & { depth: number })[]>([]);
+    const [moveFolders, setMoveFolders] = useState<(DocumentNode & { depth: number })[]>([]);
     const [showMoveModal, setShowMoveModal] = useState(false);
     const [breadcrumb, setBreadcrumb] = useState< { id: number; name: string }[] >([]);
     const [selectedMoveFolder, setSelectedMoveFolder] = useState<number | null>(null);
@@ -121,7 +130,7 @@ function Arborescence() {
             return;
         }
 
-        apiFetch<FolderResponse>("/api/nodes", {
+        apiFetch<DocumentNode>("/api/nodes", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -132,8 +141,8 @@ function Arborescence() {
                 name: name,
             }),
         })
-            .then((data) => {
-                console.log(data);
+            .then((createdFile) => {
+                onFileSelect?.(createdFile, [...breadcrumb.map((folder) => folder.id), ...(currentFolder === null ? [] : [currentFolder])]);
 
                 if (currentFolder === null) {
                     return apiFetch<FolderResponse>("/api/folders/root/children")
@@ -166,8 +175,8 @@ function Arborescence() {
                 name: newName,
             }),
         })
-            .then((data) => {
-                console.log(data);
+            .then(() => {
+                onNodeRenamed?.(nodeId, newName);
 
                 if (currentFolder === null) {
                     return apiFetch<FolderResponse>("/api/folders/root/children")
@@ -185,6 +194,9 @@ function Arborescence() {
     }
 
     function deleteNode(nodeId: number, nodeName: string) {
+        if (canDeleteNode && !canDeleteNode(nodeId)) {
+            return;
+        }
         const confirmed = confirm(`Voulez-vous supprimer "${nodeName}" ?`);
 
         if (!confirmed) {
@@ -195,6 +207,7 @@ function Arborescence() {
             method: "DELETE",
         })
             .then(() => {
+                onNodeDeleted?.(nodeId);
                 if (currentFolder === null) {
                     return apiFetch<FolderResponse>("/api/folders/root/children")
                         .then((data) => {
@@ -211,7 +224,7 @@ function Arborescence() {
     }
 
     async function moveNode(nodeId: number, nodeName: string) {
-        const folders: (Node & { depth: number })[] = [];
+        const folders: (DocumentNode & { depth: number })[] = [];
 
         async function loadFolders(
             parentId: number | null,
@@ -264,7 +277,9 @@ function Arborescence() {
                 parentId: selectedMoveFolder,
             }),
         })
-            .then(() => {
+            .then(async () => {
+                const destination = await apiFetch<FolderResponse>(`/api/folders/${selectedMoveFolder}/children`);
+                onNodeMoved?.(moveNodeId, [...destination.breadcrumb.map((folder) => folder.id), selectedMoveFolder]);
                 setShowMoveModal(false);
                 setMoveNodeId(null);
                 setMoveNodeName("");
@@ -301,12 +316,14 @@ function Arborescence() {
 
     return (
         <div>
-            <div className="flex items-center justify-between mb-5">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h1 className="m-0 mb-1.5 text-3xl font-semibold">📁 Arborescence</h1>
+                    <h2 className="text-lg font-semibold text-slate-900">
+                        Documents
+                    </h2>
                 </div>
 
-                <div className="flex gap-2.5">
+                <div className="flex flex-wrap gap-2">
                     <button
                        className="border-0 rounded-md px-3.5 py-2.5 bg-blue-600 text-white text-sm cursor-pointer hover:bg-blue-700"
                         onClick={createFolder}
@@ -323,7 +340,7 @@ function Arborescence() {
                 </div>
             </div>
 
-            <div className="flex items-center gap-1.5 mb-4 text-sm">
+            <div className="mb-4 flex flex-wrap items-center gap-1.5 text-sm">
                 <button
                     className="border-0 rounded-md px-3.5 py-2.5 bg-blue-600 text-white text-sm cursor-pointer hover:bg-blue-700"
                     onClick={openRoot}
@@ -360,22 +377,26 @@ function Arborescence() {
                 {folders.map((folder) => (
                     <div
                         key={folder.id}
-                        className="flex items-center justify-between p-3 mb-2 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
-                        onClick={() => {
-                            if (folder.type === "folder") {
-                                openFolder(folder.id);
-                            }
-                        }}
+                        className={`mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2 transition-colors ${selectedFileId === folder.id ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 bg-white'}`}
                     >
-                        <div className="flex items-center gap-2.5">
-                            <span className="text-xl">
+                        <button
+                            type="button"
+                            className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-2 text-left hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-indigo-600"
+                            aria-current={selectedFileId === folder.id ? 'true' : undefined}
+                            aria-label={`${folder.type === 'folder' ? 'Ouvrir le dossier' : 'Modifier le fichier'} ${folder.name}`}
+                            onClick={() => {
+                                if (folder.type === 'folder') openFolder(folder.id);
+                                else onFileSelect?.(folder, [...breadcrumb.map((ancestor) => ancestor.id), ...(currentFolder === null ? [] : [currentFolder])]);
+                            }}
+                        >
+                            <span aria-hidden="true" className="text-xl">
                                 {folder.type === "folder" ? "📁" : "📄"}
                             </span>
 
-                            <span className="text-[15px] text-gray-700">
+                            <span className="min-w-0 break-words text-sm text-gray-700">
                                 {folder.name}
                             </span>
-                        </div>
+                        </button>
 
                         <div className="flex items-center gap-1.5">
                             <button

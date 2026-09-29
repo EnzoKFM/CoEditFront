@@ -6,7 +6,6 @@ import { EditorToolbar } from './EditorToolbar'
 import './editor.css'
 
 export interface DocumentEditorProps {
-    /** Initial value only. Use key={documentId} to open a different document. */
     initialContent?: JSONContent
     onChange?: (content: JSONContent) => void
     editable?: boolean
@@ -44,7 +43,7 @@ export function DocumentEditor({ initialContent, onChange, editable = true }: Do
             {editor && editable && <EditorToolbar editor={editor} />}
             <EditorContent editor={editor} />
             <footer className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
-                {editable ? 'Édition locale' : 'Lecture seule'}
+                {editable ? 'Pensez à enregistrer vos modifications.' : 'Lecture seule'}
             </footer>
         </section>
     )
