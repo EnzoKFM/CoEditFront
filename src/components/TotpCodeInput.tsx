@@ -8,8 +8,6 @@ type TotpCodeInputProps = {
 };
 
 // Champ du code à 6 chiffres de l'application d'authentification.
-// inputMode="numeric" affiche le pavé numérique sur mobile ;
-// autoComplete="one-time-code" permet au navigateur de proposer le code.
 export function TotpCodeInput({ id, value, onChange, autoFocus = false }: TotpCodeInputProps) {
   return (
     <div>

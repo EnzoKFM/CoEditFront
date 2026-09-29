@@ -217,7 +217,7 @@ function UsersTable({ users, onUserUpdated }: UsersTableProps) {
         </p>
       )}
 
-      {/* Défilement horizontal sur mobile plutôt qu'un tableau écrasé */}
+      {/* Défilement horizontal sur mobile */}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-200 text-slate-500">
@@ -249,7 +249,7 @@ function UsersTable({ users, onUserUpdated }: UsersTableProps) {
                   )}
                 </td>
                 <td className="py-3 text-right">
-                  {/* L'API refuse qu'un admin bloque son propre compte */}
+                  {/* L'admin connecté ne peut pas se bloquer lui même */}
                   {user.id === currentUser?.id ? (
                     <span className="text-xs text-slate-400">Vous</span>
                   ) : (

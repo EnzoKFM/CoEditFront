@@ -1,6 +1,6 @@
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
-// Erreur renvoyée par l'API : status HTTP + message lisible (déjà en français côté serveur)
+// Erreur renvoyée par l'API : status HTTP + message lisible
 export class ApiError extends Error {
   status: number;
 
