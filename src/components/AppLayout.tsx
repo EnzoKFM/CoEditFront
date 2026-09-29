@@ -1,3 +1,4 @@
+import { useCallback, useRef } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth/authContext';
 
@@ -9,21 +10,17 @@ function navLinkClass({ isActive }: { isActive: boolean }) {
 // Header avec le nom de l'utilisateur connecté et un bouton de déconnexion
 export function AppLayout() {
   const { user, logout } = useAuth();
+  const leaveGuard = useRef<(() => boolean) | null>(null);
+  const registerLeaveGuard = useCallback((guard: (() => boolean) | null) => { leaveGuard.current = guard; }, []);
 
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-4 py-3 sm:px-8">
+        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-4 px-4 py-3 sm:px-8">
           <nav className="flex flex-wrap items-center gap-6 text-sm">
             <span className="font-semibold text-indigo-600">CoEdit</span>
             <NavLink to="/" end className={navLinkClass}>
               Accueil
-            </NavLink>
-            <NavLink to="/arborescence" className={navLinkClass}>
-              Documents
-            </NavLink>
-            <NavLink to="/editor" className={navLinkClass}>
-              Éditeur
             </NavLink>
             <NavLink to="/calls" className={navLinkClass}>
               Appels
@@ -47,7 +44,7 @@ export function AppLayout() {
             </span>
             <button
               type="button"
-              onClick={logout}
+              onClick={() => { if (!leaveGuard.current || leaveGuard.current()) void logout(); }}
               className="rounded-lg border border-slate-300 px-3 py-1.5 font-medium text-slate-700 transition hover:bg-slate-100"
             >
               Se déconnecter
@@ -56,8 +53,8 @@ export function AppLayout() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-8">
-        <Outlet />
+      <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-8">
+        <Outlet context={{ registerLeaveGuard }} />
       </main>
     </div>
   );

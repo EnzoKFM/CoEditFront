@@ -54,14 +54,37 @@ La connexion utilise le cookie de session du back. Les comptes sont créés par 
 ## Pages
 
 - `/login` : connexion.
-- `/arborescence` : dossiers et documents.
-- `/editor` : éditeur local, pas encore relié à la sauvegarde ou à la collaboration.
+- `/` : documents et éditeur dans le même espace de travail.
+- `/arborescence` et `/editor` : redirection vers l’accueil.
 - `/calls` : choix du document pour un appel audio.
 - `/calls/:fileId` : salon audio du document.
 - `/profil`, `/a2f` : profil et double authentification.
 - `/admin/utilisateurs` : gestion des comptes, réservée aux administrateurs.
 
 Les pages métier nécessitent une session ouverte.
+
+## Documents
+
+Sur l’accueil, ouvrir un fichier dans la liste pour afficher son contenu dans l’éditeur.
+« Nouveau fichier » crée puis ouvre un document. Le bouton « Enregistrer » et le raccourci
+Ctrl+S (Cmd+S sur Mac) sauvegardent le contenu et sa mise en forme.
+
+Les dossiers et fichiers utilisent les routes REST existantes. Le contenu passe par
+`document:join` puis `document:operation`, avec le cookie de session. Le back doit prendre
+en charge `expectedRevision` et `persist` ; « Enregistré » apparaît après confirmation
+de la sauvegarde en base. Aucune migration de base n’est nécessaire.
+
+Le texte brut existant reste lisible. Après sauvegarde, le contenu contient le JSON Tiptap
+précédé de `COEDIT_RICH_TEXT_V1\n`, pour conserver les titres, listes, liens et styles.
+
+Un changement de fichier ou de page propose d’enregistrer, d’abandonner ou de rester.
+Fermer l’onglet avec des modifications déclenche l’avertissement du navigateur.
+Il n’y a pas de brouillon stocké localement : en cas de coupure, garder la page ouverte.
+
+Les sauvegardes des autres personnes sont reçues dans l’éditeur. Si le document a aussi
+été modifié localement, la sauvegarde est bloquée pour éviter d’écraser leur travail.
+Copier le texte à conserver, puis recharger la version du serveur. La fusion des frappes
+simultanées en texte riche reste à implémenter ; le panneau d’appels viendra ensuite.
 
 ## Appels audio
 
@@ -75,8 +98,7 @@ Le son passe par WebRTC. Socket.IO utilise le cookie de connexion et les événe
 Quitter la page, se déconnecter ou perdre la connexion au serveur termine l’appel et arrête le micro.
 Après reconnexion, le salon est rejoint à nouveau ; l’appel doit être relancé.
 
-Le salon est associé au document, mais ne modifie pas son contenu. Aucune écriture REST
-ni synchronisation de l’éditeur n’est ajoutée. L’édition collaborative utilisera l’OT du back.
+Le salon est associé au document, mais ne modifie pas son contenu.
 
 ### Réseau et microphone
 
@@ -101,11 +123,13 @@ Les erreurs de micro, les appels refusés, les délais dépassés et les coupure
 npm run build
 npm run lint
 npm run test:audio
+npm run test:documents
 ```
 
 Les tests audio du front couvrent la présence, l’annulation pendant la demande de micro,
 le refus d’autorisation, l’ordre des candidats ICE, la coupure du micro et le nettoyage des connexions.
 Ils utilisent des doublures de Socket.IO et du navigateur.
+Les tests documents couvrent le format, les conflits, les reconnexions et la confirmation de sauvegarde.
 Les tests du back se lancent séparément dans son conteneur Docker.
 
 Pour vérifier un appel complet, ouvrir deux sessions authentifiées, rejoindre le même salon,

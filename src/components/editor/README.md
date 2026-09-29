@@ -25,9 +25,9 @@ Fonctions : titres 1 à 3, gras, italique, souligné, listes, citations, liens,
 annuler/rétablir. Les liens saisis dans le formulaire acceptent HTTP, HTTPS et mailto.
 Les raccourcis natifs Tiptap (Ctrl/Cmd+B, I, Z…) sont disponibles.
 
-`App.tsx` est uniquement une page de démonstration locale. Aucune persistance,
-collaboration, invitation ou fonction audio n’est implémentée à cette étape.
-Un rechargement perd le contenu de cette démonstration.
+`WorkspacePage` relie le composant aux fichiers de l’arborescence et à `DocumentSessionClient`.
+Le parent gère le chargement, la sauvegarde Socket.IO et les avertissements avant de quitter.
+Une version distante remonte le composant avec une nouvelle clé pour réinitialiser son historique.
 
 Lors de l’ajout de la collaboration, utiliser l’historique collaboratif et désactiver
 l’extension UndoRedo du StarterKit. Le contrat de synchronisation reste à définir avec le back.
