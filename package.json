@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test:audio": "node --test tests/audioCallClient.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -18,6 +19,7 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.4",
+    "socket.io-client": "^4.8.4",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {

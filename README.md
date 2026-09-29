@@ -1,14 +1,16 @@
 # CoEditFront
 
-Front de CoEdit (React + TypeScript + Vite + Tailwind).
+Interface React, TypeScript et Tailwind de CoEdit.
 
-## Lancement
+## Lancer le front
+
+Avec Node 22.18 ou plus récent :
 
 ```bash
-cp .env.example .env
-npm install
+npm ci
 npm run dev
 ```
+
 
 L'API (dépôt CoEditBack) doit tourner sur `http://localhost:3000`.
 
@@ -46,78 +48,68 @@ L'URL est publique : utiliser un vrai mot de passe administrateur, et couper le 
 
 ---
 
-# React + TypeScript + Vite
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+La connexion utilise le cookie de session du back. Les comptes sont créés par un administrateur.
 
-Currently, two official plugins are available:
+## Pages
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- `/login` : connexion.
+- `/arborescence` : dossiers et documents.
+- `/editor` : éditeur local, pas encore relié à la sauvegarde ou à la collaboration.
+- `/calls` : choix du document pour un appel audio.
+- `/calls/:fileId` : salon audio du document.
+- `/profil`, `/a2f` : profil et double authentification.
+- `/admin/utilisateurs` : gestion des comptes, réservée aux administrateurs.
 
-## React Compiler
+Les pages métier nécessitent une session ouverte.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Appels audio
 
-## Expanding the ESLint configuration
+Dans « Appels », choisir un document puis rejoindre son salon. Les autres personnes
+présentes apparaissent dans la liste. Cliquer sur « Appeler », puis accepter sur l’autre navigateur.
+Le micro est demandé uniquement au démarrage ou à l’acceptation de l’appel.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+Le son passe par WebRTC. Socket.IO utilise le cookie de connexion et les événements du back :
+`document:join`, `presence:update`, `presence:leave`, `call:invite`, `call:incoming`,
+`call:accept`, `call:accepted`, `call:signal`, `call:hangup` et `call:ended`.
+Quitter la page, se déconnecter ou perdre la connexion au serveur termine l’appel et arrête le micro.
+Après reconnexion, le salon est rejoint à nouveau ; l’appel doit être relancé.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+Le salon est associé au document, mais ne modifie pas son contenu. Aucune écriture REST
+ni synchronisation de l’éditeur n’est ajoutée. L’édition collaborative utilisera l’OT du back.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### Réseau et microphone
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Le navigateur exige HTTPS, sauf sur localhost, pour accéder au micro.
+Un serveur STUN est utilisé par défaut. Sur certains réseaux, un serveur TURN est nécessaire.
+La variable `VITE_ICE_SERVERS` accepte une liste JSON, par exemple :
 
+```dotenv
+VITE_ICE_SERVERS=[{"urls":"stun:stun.l.google.com:19302"},{"urls":"turn:turn.exemple.fr:3478","username":"identifiant-temporaire","credential":"mot-de-passe-temporaire"}]
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+Les variables `VITE_*` sont visibles dans le navigateur : utiliser des identifiants TURN
+limités dans le temps, jamais un secret d’administration. Aucun serveur TURN n’est fourni par ce dépôt.
+Redémarrer Vite après un changement de `.env`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Si le navigateur bloque la lecture automatique, un bouton « Activer le son » apparaît.
+Les erreurs de micro, les appels refusés, les délais dépassés et les coupures sont affichés dans le salon.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Vérifications
 
+```bash
+npm run build
+npm run lint
+npm run test:audio
 ```
+
+Les tests audio du front couvrent la présence, l’annulation pendant la demande de micro,
+le refus d’autorisation, l’ordre des candidats ICE, la coupure du micro et le nettoyage des connexions.
+Ils utilisent des doublures de Socket.IO et du navigateur.
+Les tests du back se lancent séparément dans son conteneur Docker.
+
+Pour vérifier un appel complet, ouvrir deux sessions authentifiées, rejoindre le même salon,
+appeler puis accepter. Tester le son dans les deux sens, le bouton micro, le raccrochage,
+le refus et la sortie de la page. Utiliser un casque pour éviter l’écho.
+
+`/audio-call.html` conserve la démo visuelle des appels simulés. Elle n’est pas incluse dans le build principal.
