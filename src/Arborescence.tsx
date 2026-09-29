@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiFetch } from "./lib/api";
 
 type Node = {
     id: number;
@@ -7,6 +8,19 @@ type Node = {
     childrenCount?: number;
     size?: number;
     updatedAt: string;
+};
+
+type FolderResponse = {
+    folder: {
+        id: number;
+        name: string;
+        parentId: number | null;
+    } | null;
+    breadcrumb: {
+        id: number;
+        name: string;
+    }[];
+    children: Node[];
 };
 
 function Arborescence() {
@@ -25,14 +39,7 @@ function Arborescence() {
     const [selectedMoveFolder, setSelectedMoveFolder] = useState<number | null>(null);
 
     useEffect(() => {
-        fetch("http://localhost:3000/api/folders/root/children")
-            .then((response) => {
-                if (!response.ok) {
-                    throw new Error("Impossible de charger l'arborescence");
-                }
-
-                return response.json();
-            })
+        apiFetch<FolderResponse>("/api/folders/root/children")
             .then((data) => {
                 setFolders(data.children);
                 setBreadcrumb([]);
@@ -43,15 +50,9 @@ function Arborescence() {
             });
     }, []);
 
-    function openFolder(folderId: number) {
-        fetch(`http://localhost:3000/api/folders/${folderId}/children`)
-            .then((response) => {
-                if (!response.ok) {
-                    throw new Error("Impossible de charger le dossier");
-                }
 
-                return response.json();
-            })
+    function openFolder(folderId: number) {
+        apiFetch<FolderResponse>(`/api/folders/${folderId}/children`)
             .then((data) => {
                 setFolders(data.children);
                 setCurrentFolder(folderId);
@@ -84,7 +85,7 @@ function Arborescence() {
             return;
         }
 
-        fetch("http://localhost:3000/api/nodes", {
+        apiFetch<FolderResponse>("/api/nodes", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -95,29 +96,11 @@ function Arborescence() {
                 name: name,
             }),
         })
-            .then((response) => {
-                if (!response.ok) {
-                    throw new Error("Impossible de créer le dossier");
-                }
-
-                return response.json();
-            })
             .then((data) => {
                 console.log(data);
 
                 if (currentFolder === null) {
-                    return fetch(
-                        "http://localhost:3000/api/folders/root/children"
-                    )
-                        .then((response) => {
-                            if (!response.ok) {
-                                throw new Error(
-                                    "Impossible de recharger l'arborescence"
-                                );
-                            }
-
-                            return response.json();
-                        })
+                    return apiFetch<FolderResponse>("/api/folders/root/children")
                         .then((data) => {
                             setFolders(data.children);
                         });
@@ -138,7 +121,7 @@ function Arborescence() {
             return;
         }
 
-        fetch("http://localhost:3000/api/nodes", {
+        apiFetch<FolderResponse>("/api/nodes", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -149,29 +132,11 @@ function Arborescence() {
                 name: name,
             }),
         })
-            .then((response) => {
-                if (!response.ok) {
-                    throw new Error("Impossible de créer le fichier");
-                }
-
-                return response.json();
-            })
             .then((data) => {
                 console.log(data);
 
                 if (currentFolder === null) {
-                    return fetch(
-                        "http://localhost:3000/api/folders/root/children"
-                    )
-                        .then((response) => {
-                            if (!response.ok) {
-                                throw new Error(
-                                    "Impossible de recharger l'arborescence"
-                                );
-                            }
-
-                            return response.json();
-                        })
+                    return apiFetch<FolderResponse>("/api/folders/root/children")
                         .then((data) => {
                             setFolders(data.children);
                         });
@@ -192,7 +157,7 @@ function Arborescence() {
             return;
         }
 
-        fetch(`http://localhost:3000/api/nodes/${nodeId}`, {
+        apiFetch<FolderResponse>(`/api/nodes/${nodeId}`, {
             method: "PATCH",
             headers: {
                 "Content-Type": "application/json",
@@ -201,29 +166,11 @@ function Arborescence() {
                 name: newName,
             }),
         })
-            .then((response) => {
-                if (!response.ok) {
-                    throw new Error("Impossible de renommer cet élément");
-                }
-
-                return response.json();
-            })
             .then((data) => {
                 console.log(data);
 
                 if (currentFolder === null) {
-                    return fetch(
-                        "http://localhost:3000/api/folders/root/children"
-                    )
-                        .then((response) => {
-                            if (!response.ok) {
-                                throw new Error(
-                                    "Impossible de recharger l'arborescence"
-                                );
-                            }
-
-                            return response.json();
-                        })
+                    return apiFetch<FolderResponse>("/api/folders/root/children")
                         .then((data) => {
                             setFolders(data.children);
                         });
@@ -244,27 +191,12 @@ function Arborescence() {
             return;
         }
 
-        fetch(`http://localhost:3000/api/nodes/${nodeId}`, {
+        apiFetch<FolderResponse>(`/api/nodes/${nodeId}`, {
             method: "DELETE",
         })
-            .then((response) => {
-                if (!response.ok) {
-                    throw new Error("Erreur lors de la suppression");
-                }
-
+            .then(() => {
                 if (currentFolder === null) {
-                    return fetch(
-                        "http://localhost:3000/api/folders/root/children"
-                    )
-                        .then((response) => {
-                            if (!response.ok) {
-                                throw new Error(
-                                    "Impossible de recharger l'arborescence"
-                                );
-                            }
-
-                            return response.json();
-                        })
+                    return apiFetch<FolderResponse>("/api/folders/root/children")
                         .then((data) => {
                             setFolders(data.children);
                         });
@@ -287,16 +219,10 @@ function Arborescence() {
         ) {
             const url =
                 parentId === null
-                    ? "http://localhost:3000/api/folders/root/children"
-                    : `http://localhost:3000/api/folders/${parentId}/children`;
+                    ? "/api/folders/root/children"
+                    : `/api/folders/${parentId}/children`;
 
-            const response = await fetch(url);
-
-            if (!response.ok) {
-                throw new Error("Impossible de charger les dossiers");
-            }
-
-            const data = await response.json();
+            const data = await apiFetch<FolderResponse>(url);
 
             for (const item of data.children) {
                 if (item.type === "folder" && item.id !== nodeId) {
@@ -329,7 +255,7 @@ function Arborescence() {
             return;
         }
 
-        fetch(`http://localhost:3000/api/nodes/${moveNodeId}`, {
+        apiFetch<FolderResponse>(`/api/nodes/${moveNodeId}`, {
             method: "PATCH",
             headers: {
                 "Content-Type": "application/json",
@@ -338,29 +264,14 @@ function Arborescence() {
                 parentId: selectedMoveFolder,
             }),
         })
-            .then((response) => {
-                if (!response.ok) {
-                    throw new Error("Erreur lors du déplacement");
-                }
-
+            .then(() => {
                 setShowMoveModal(false);
                 setMoveNodeId(null);
                 setMoveNodeName("");
                 setSelectedMoveFolder(null);
 
                 if (currentFolder === null) {
-                    return fetch(
-                        "http://localhost:3000/api/folders/root/children"
-                    )
-                        .then((response) => {
-                            if (!response.ok) {
-                                throw new Error(
-                                    "Impossible de recharger l'arborescence"
-                                );
-                            }
-
-                            return response.json();
-                        })
+                    return apiFetch<FolderResponse>("/api/folders/root/children")
                         .then((data) => {
                             setFolders(data.children);
                         });
@@ -375,14 +286,7 @@ function Arborescence() {
     }
 
     function openRoot() {
-        fetch("http://localhost:3000/api/folders/root/children")
-            .then((response) => {
-                if (!response.ok) {
-                    throw new Error("Impossible de charger la racine");
-                }
-
-                return response.json();
-            })
+        apiFetch<FolderResponse>("/api/folders/root/children")
             .then((data) => {
                 setFolders(data.children);
                 setCurrentFolder(null);
