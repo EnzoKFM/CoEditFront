@@ -67,8 +67,8 @@ export function AudioCallPanel({
                         Refuser
                     </Button>
                 </>}
-                {status === 'connected' && <Button aria-pressed={muted} onClick={onToggleMute} variant={muted ? 'primary' : 'secondary'}>
-                    Micro coupé
+                {status === 'connected' && <Button onClick={onToggleMute} variant={muted ? 'primary' : 'secondary'}>
+                    {muted ? 'Réactiver le micro' : 'Couper le micro'}
                 </Button>}
                 {(status === 'outgoing' || status === 'connecting' || status === 'connected') && <Button onClick={onHangUp} variant="danger">
                     {status === 'connected' ? 'Raccrocher' : 'Annuler l’appel'}

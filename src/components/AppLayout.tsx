@@ -13,11 +13,20 @@ export function AppLayout() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 sm:px-8">
-          <nav className="flex items-center gap-6 text-sm">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-4 py-3 sm:px-8">
+          <nav className="flex flex-wrap items-center gap-6 text-sm">
             <span className="font-semibold text-indigo-600">CoEdit</span>
             <NavLink to="/" end className={navLinkClass}>
               Accueil
+            </NavLink>
+            <NavLink to="/arborescence" className={navLinkClass}>
+              Documents
+            </NavLink>
+            <NavLink to="/editor" className={navLinkClass}>
+              Éditeur
+            </NavLink>
+            <NavLink to="/calls" className={navLinkClass}>
+              Appels
             </NavLink>
             {/* Le libellé suit l'état : "Activer" serait faux une fois l'A2F active */}
             <NavLink to="/a2f" className={navLinkClass}>

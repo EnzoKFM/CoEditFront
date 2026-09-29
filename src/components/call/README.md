@@ -1,18 +1,23 @@
 # Appels audio
 
-Interface d’appel à deux. Pour l’instant, tout est simulé : le micro et le back ne sont pas branchés.
+Interface d’appel à deux, branchée au back avec Socket.IO et WebRTC.
 
 ## Tester
 
-Lancer `npm run dev` et ouvrir `/audio-call.html`.
-Les boutons de la démo permettent de recevoir un appel, de simuler une connexion ou une erreur.
-Cette page sert aux essais et n’est pas incluse dans le build principal.
+Lancer le back et `npm run dev`, puis se connecter et ouvrir « Appels ».
+Deux personnes doivent rejoindre le salon du même document pour s’appeler.
+Le micro est demandé au démarrage ou à l’acceptation. Quitter la page termine l’appel.
+
+La page `/audio-call.html` reste une démo visuelle, sans appel réel.
 
 ## Fichiers
 
-- `components/call` : panneau d’appel et types.
+- `components/call` : panneau, salon et lecture du son distant.
+- `audio` : connexion Socket.IO et gestion WebRTC.
+- `pages/AudioCallsPage.tsx` : choix du document et ouverture du salon.
 - `components/shared/Button.tsx` : bouton commun au panneau et à la démo.
 - `demos/audio-call` : page de test et états simulés.
 
-`AudioCallPanel` reçoit le participant, le document, l’état de l’appel et les actions en props.
-La démo montre comment l’utiliser. Le branchement WebRTC viendra quand le back sera prêt.
+`AudioCallPanel` reçoit le participant, l’état et les actions en props.
+`AudioCallClient` gère la présence, les invitations, le micro et la connexion audio.
+La configuration et les étapes de test sont dans le README du projet.

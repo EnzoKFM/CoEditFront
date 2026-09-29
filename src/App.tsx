@@ -10,6 +10,7 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { TwoFactorPage } from "./pages/TwoFactorPage";
 import Arborescence from "./Arborescence";
 import { DocumentEditor } from "./components/editor";
+import { AudioCallsPage } from "./pages/AudioCallsPage";
 
 function Home() {
   const { user } = useAuth();
@@ -50,6 +51,8 @@ function App() {
               <Route path="/" element={<Home />} />
               <Route path="/arborescence" element={<Arborescence />} />
               <Route path="/editor" element={<EditorPage />} />
+              <Route path="/calls" element={<AudioCallsPage />} />
+              <Route path="/calls/:fileId" element={<AudioCallsPage />} />
               <Route path="/a2f" element={<TwoFactorPage />} />
               <Route path="/profil" element={<ProfilePage />} />
 
