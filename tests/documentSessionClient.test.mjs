@@ -10,6 +10,7 @@ class FakeSocket {
     listeners = new Map()
     requests = []
     on(event, listener) { this.listeners.set(event, listener) }
+    off(event, listener) { if (this.listeners.get(event) === listener) this.listeners.delete(event) }
     timeout() { return this }
     emit(event, payload, acknowledge) { this.requests.push({ event, payload: structuredClone(payload), acknowledge }) }
     connect() { this.connected = true; this.receive('connect') }

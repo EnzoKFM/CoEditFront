@@ -1,46 +1,29 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
-import { createAudioCallClient } from '../../audio/createAudioCallClient'
+import { useSyncExternalStore } from 'react'
+import type { AudioCallClient } from '../../audio/AudioCallClient'
 import { AudioCallPanel } from './AudioCallPanel'
 import { RemoteAudio } from './RemoteAudio'
 import { Button } from '../shared/Button'
 
-export function AudioCallRoom({ fileId, documentName, userName }: {
-    fileId: number
+export function AudioCallRoom({ client, documentName, onRetry }: {
+    client: AudioCallClient
     documentName: string
-    userName: string
+    onRetry: () => void
 }) {
-    const [client] = useState(() => createAudioCallClient(fileId, userName))
     const state = useSyncExternalStore(client.subscribe, client.getSnapshot)
-
-    useEffect(() => {
-        client.connect()
-        return () => client.dispose()
-    }, [client])
-
-    useEffect(() => {
-        function warnBeforeLeaving(event: BeforeUnloadEvent) {
-            if (['incoming', 'outgoing', 'connecting', 'connected'].includes(client.getSnapshot().status)) {
-                event.preventDefault()
-            }
-        }
-        window.addEventListener('beforeunload', warnBeforeLeaving)
-        return () => window.removeEventListener('beforeunload', warnBeforeLeaving)
-    }, [client])
-
     const busy = ['incoming', 'outgoing', 'connecting', 'connected'].includes(state.status)
 
     return (
-        <div className="grid items-start gap-6 md:grid-cols-2">
+        <div className="space-y-4">
             <section aria-labelledby="participants-title" className="rounded-xl border border-slate-200 bg-white p-5">
                 <h2 id="participants-title" className="text-lg font-semibold text-slate-900">
-                    Personnes présentes
+                    Sur ce document
                 </h2>
                 <p className="mt-2 text-sm text-slate-500">
-                    Ouvrez le salon de ce document avec un collègue pour vous appeler.
+                    Les personnes qui éditent ce fichier apparaissent ici. Vous pouvez les appeler tout en écrivant.
                 </p>
                 {state.connection === 'connecting' && (
                     <p role="status" className="mt-4 text-sm text-slate-600">
-                        Connexion au salon…
+                        Connexion au document…
                     </p>
                 )}
                 {state.connection === 'error' && (
@@ -48,14 +31,14 @@ export function AudioCallRoom({ fileId, documentName, userName }: {
                         <p role="alert" className="text-sm text-red-700">
                             {state.connectionError}
                         </p>
-                        <Button onClick={client.retry}>
+                        <Button onClick={onRetry}>
                             Réessayer la connexion
                         </Button>
                     </div>
                 )}
                 {state.connection === 'ready' && state.collaborators.length === 0 && (
                     <p role="status" className="mt-4 rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
-                        Vous êtes seul dans ce salon pour le moment.
+                        Vous êtes seul sur ce document pour le moment.
                     </p>
                 )}
                 <ul className="mt-4 space-y-3">

@@ -1,10 +1,8 @@
 import type { Socket } from 'socket.io-client'
 import type { CallStatus } from '../components/call/types'
 
-export interface Collaborator {
-    clientId: string
-    user: { name: string; color?: string | null }
-}
+import type { Collaborator } from '../documents/types'
+export type { Collaborator } from '../documents/types'
 
 interface CallSignal {
     clientId: string
@@ -43,6 +41,7 @@ export class AudioCallClient {
     private resources: CallResources
     private fileId: number
     private userName: string
+    private managesDocument: boolean
     private listeners = new Set<() => void>()
     private disposed = false
     private generation = 0
@@ -59,17 +58,18 @@ export class AudioCallClient {
         status: 'idle', participant: null, muted: false, message: '', remoteStream: null,
     }
 
-    constructor(socket: Socket, fileId: number, userName: string, resources: CallResources) {
+    constructor(socket: Socket, fileId: number, userName: string, resources: CallResources, managesDocument = true) {
         this.socket = socket
         this.fileId = fileId
         this.userName = userName
         this.resources = resources
+        this.managesDocument = managesDocument
     }
 
     connect() {
         this.disposed = false
         const socket = this.socket
-        socket.on('connect', this.join)
+        if (this.managesDocument) socket.on('connect', this.join)
         socket.on('disconnect', this.disconnected)
         socket.on('connect_error', this.connectionFailed)
         socket.on('presence:update', this.updatePresence)
@@ -78,7 +78,20 @@ export class AudioCallClient {
         socket.on('call:accepted', this.accepted)
         socket.on('call:signal', this.receiveSignal)
         socket.on('call:ended', this.ended)
-        socket.connect()
+        if (this.managesDocument) socket.connect()
+    }
+
+    joiningDocument = () => {
+        this.finish('idle', '')
+        this.update({ connection: 'connecting', connectionError: '', collaborators: [], participant: null })
+    }
+
+    joinedDocument = (collaborators: Collaborator[]) => {
+        this.update({ connection: 'ready', connectionError: '', collaborators: collaborators.filter((collaborator) => collaborator.clientId !== this.socket.id) })
+    }
+
+    documentFailed = (message: string) => {
+        this.update({ connection: 'error', connectionError: message, collaborators: [] })
     }
 
     getSnapshot = () => this.state
@@ -112,6 +125,7 @@ export class AudioCallClient {
     }
 
     retry = () => {
+        if (!this.managesDocument) return
         if (this.socket.connected) this.join()
         else this.socket.connect()
     }
@@ -345,9 +359,18 @@ export class AudioCallClient {
     dispose() {
         this.finish('ended', '')
         this.disposed = true
-        if (this.socket.connected) this.socket.emit('document:leave')
-        this.socket.removeAllListeners()
-        this.socket.disconnect()
-        this.listeners.clear()
+        this.socket.off('connect', this.join)
+        this.socket.off('disconnect', this.disconnected)
+        this.socket.off('connect_error', this.connectionFailed)
+        this.socket.off('presence:update', this.updatePresence)
+        this.socket.off('presence:leave', this.removePresence)
+        this.socket.off('call:incoming', this.incoming)
+        this.socket.off('call:accepted', this.accepted)
+        this.socket.off('call:signal', this.receiveSignal)
+        this.socket.off('call:ended', this.ended)
+        if (this.managesDocument) {
+            if (this.socket.connected) this.socket.emit('document:leave')
+            this.socket.disconnect()
+        }
     }
 }
