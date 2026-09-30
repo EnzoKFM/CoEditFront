@@ -1,5 +1,6 @@
-import { useSyncExternalStore } from 'react'
 import type { AudioCallClient } from '../../audio/AudioCallClient'
+import { useSyncExternalStore } from 'react'
+import { ChatPanel } from '../chat/ChatPanel'
 import { AudioCallPanel } from './AudioCallPanel'
 import { RemoteAudio } from './RemoteAudio'
 import { Button } from '../shared/Button'
@@ -80,6 +81,9 @@ export function AudioCallRoom({ client, documentName, onRetry }: {
                     </p>
                 )}
                 {state.remoteStream && <RemoteAudio stream={state.remoteStream} />}
+            </div>
+            <div className="md:col-span-2">
+                <ChatPanel socket={client.socket} isJoined={state.connection === 'ready'} />
             </div>
         </div>
     )

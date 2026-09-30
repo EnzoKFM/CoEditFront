@@ -1,4 +1,4 @@
-﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Collaborator, CollaboratorSelection } from '../../documents/types'
 import { transformIndex, type TextOperation } from '../../documents/textOperation'
 import { EditorToolbar } from './EditorToolbar'
@@ -51,6 +51,11 @@ export function DocumentEditor({ content, onChange, editable = true, canUndo, ca
     const selection = useRef<{ start: number, end: number, direction: 'forward' | 'backward' | 'none' } | null>(null)
     const preferredStart = useRef<number | undefined>(undefined)
     const [showPreview, setShowPreview] = useState(true)
+    const [textareaElement, setTextareaElement] = useState<HTMLTextAreaElement | null>(null)
+    const attachTextarea = useCallback((element: HTMLTextAreaElement | null) => {
+        textarea.current = element
+        setTextareaElement(element)
+    }, [])
     const preview = useMemo(() => renderMarkdown(content), [content])
     const sendPresence = () => {
         const input = textarea.current
@@ -113,7 +118,7 @@ export function DocumentEditor({ content, onChange, editable = true, canUndo, ca
                         Texte Markdown
                     </label>
                     <textarea
-                        ref={textarea}
+                        ref={attachTextarea}
                         id="document-markdown"
                         aria-label="Contenu du document"
                         value={content}
