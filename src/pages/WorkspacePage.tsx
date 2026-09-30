@@ -205,6 +205,8 @@ function Workspace({ selected, session, onSelect }: WorkspaceProps) {
                                 subscribeRemote={client.subscribeRemote}
                                 onCompositionStart={client.startComposition}
                                 onCompositionEnd={client.endComposition}
+                                collaborators={state.collaborators}
+                                onPresenceChange={client.updatePresence}
                             />
                         )}
                     </>
