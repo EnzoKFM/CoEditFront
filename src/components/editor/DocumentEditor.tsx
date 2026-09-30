@@ -1,4 +1,5 @@
 ﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { Collaborator, CollaboratorSelection } from '../../documents/types'
 import { transformIndex, type TextOperation } from '../../documents/textOperation'
 import { EditorToolbar } from './EditorToolbar'
 import { renderMarkdown } from './markdown'
@@ -15,14 +16,45 @@ export interface DocumentEditorProps {
     subscribeRemote: (listener: (operation: TextOperation) => void) => () => void
     onCompositionStart: () => void
     onCompositionEnd: () => void
+    collaborators: Collaborator[]
+    onPresenceChange: (selection: CollaboratorSelection | null) => void
 }
 
-export function DocumentEditor({ content, onChange, editable = true, canUndo, canRedo, onUndo, onRedo, subscribeRemote, onCompositionStart, onCompositionEnd }: DocumentEditorProps) {
+interface CursorPosition { top: number; left: number }
+
+function getCollaboratorColor(collaborator: Collaborator, index: number) {
+    if (collaborator.user.color) return collaborator.user.color
+    const colors = ['#ef4444', '#3b82f6', '#22c55e', '#a855f7', '#f97316', '#06b6d4', '#ec4899', '#84cc16']
+    return colors[index % colors.length]
+}
+
+function getCaretPosition(textarea: HTMLTextAreaElement, content: string, index: number): CursorPosition {
+    const mirror = document.createElement('div')
+    const style = window.getComputedStyle(textarea)
+    Object.assign(mirror.style, { position: 'absolute', visibility: 'hidden', pointerEvents: 'none', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', width: `${textarea.clientWidth}px`, font: style.font, fontFamily: style.fontFamily, fontSize: style.fontSize, fontWeight: style.fontWeight, lineHeight: style.lineHeight, letterSpacing: style.letterSpacing, padding: style.padding, border: style.border })
+    mirror.appendChild(document.createTextNode(content.slice(0, index)))
+    const marker = document.createElement('span')
+    marker.textContent = '\u200b'
+    mirror.appendChild(marker)
+    document.body.appendChild(mirror)
+    const markerRect = marker.getBoundingClientRect()
+    const mirrorRect = mirror.getBoundingClientRect()
+    const position = { left: markerRect.left - mirrorRect.left - textarea.scrollLeft, top: markerRect.top - mirrorRect.top - textarea.scrollTop }
+    document.body.removeChild(mirror)
+    return position
+}
+
+export function DocumentEditor({ content, onChange, editable = true, canUndo, canRedo, onUndo, onRedo, subscribeRemote, onCompositionStart, onCompositionEnd, collaborators, onPresenceChange }: DocumentEditorProps) {
     const textarea = useRef<HTMLTextAreaElement>(null)
     const selection = useRef<{ start: number, end: number, direction: 'forward' | 'backward' | 'none' } | null>(null)
     const preferredStart = useRef<number | undefined>(undefined)
     const [showPreview, setShowPreview] = useState(true)
     const preview = useMemo(() => renderMarkdown(content), [content])
+    const sendPresence = () => {
+        const input = textarea.current
+        if (!input) return
+        onPresenceChange({ anchor: input.selectionStart, head: input.selectionEnd })
+    }
 
     useEffect(() => subscribeRemote((operation) => {
         const input = textarea.current
@@ -74,7 +106,7 @@ export function DocumentEditor({ content, onChange, editable = true, canUndo, ca
         <section aria-label="Éditeur Markdown" className="@container overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <EditorToolbar disabled={!editable} canUndo={canUndo} canRedo={canRedo} onUndo={onUndo} onRedo={onRedo} onInsert={insertMarkdown} showPreview={showPreview} onTogglePreview={() => setShowPreview(!showPreview)} />
             <div className={showPreview ? 'grid @2xl:grid-cols-2' : ''}>
-                <div className="min-w-0">
+                <div className="relative min-w-0">
                     <label htmlFor="document-markdown" className="block border-b border-slate-100 px-5 py-2 text-xs font-medium text-slate-500">
                         Texte Markdown
                     </label>
@@ -95,7 +127,23 @@ export function DocumentEditor({ content, onChange, editable = true, canUndo, ca
                             if (event.key.toLowerCase() === 'z') { event.preventDefault(); if (event.shiftKey) onRedo(); else onUndo() }
                             if (event.key.toLowerCase() === 'y') { event.preventDefault(); onRedo() }
                         }}
+                        onSelect={sendPresence}
+                        onClick={sendPresence}
+                        onKeyUp={sendPresence}
                     />
+                    {collaborators.map((collaborator, index) => {
+                        if (!collaborator.selection) return null
+                        const position = getCaretPosition(textarea.current!, content, collaborator.selection.head)
+                        const color = getCollaboratorColor(collaborator, index)
+                        return (
+                            <div key={collaborator.clientId} className="pointer-events-none absolute z-10" style={{ left: position.left + 20, top: position.top + 32, color }}>
+                                <div className="h-5 w-0.5" style={{ backgroundColor: color }} />
+                                <span className="absolute left-1 top-0 whitespace-nowrap rounded px-1 text-[10px] font-medium text-white" style={{ backgroundColor: color }}>
+                                    {collaborator.user.name}
+                                </span>
+                            </div>
+                        )
+                    })}
                 </div>
                 {showPreview && (
                     <section aria-label="Aperçu Markdown" className="min-w-0 border-t border-slate-200 @2xl:border-l @2xl:border-t-0">

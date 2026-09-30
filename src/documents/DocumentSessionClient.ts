@@ -1,7 +1,7 @@
 ﻿import type { Socket } from 'socket.io-client'
 import { invertOperation, operationFromChange } from './documentContent.ts'
-import type { Collaborator, DocumentSessionObserver } from './types'
-import { applyOperation, transformOperation, type TextOperation } from './textOperation.ts'
+import type { Collaborator, CollaboratorSelection, DocumentSessionObserver } from './types'
+import { applyOperation, transformIndex, transformOperation, type TextOperation } from './textOperation.ts'
 
 interface JoinReply {
     collaborators?: Collaborator[]
@@ -27,6 +27,7 @@ export interface DocumentState {
     message: string
     canUndo: boolean
     canRedo: boolean
+    collaborators: Collaborator[]
 }
 
 export class DocumentSessionClient {
@@ -49,7 +50,7 @@ export class DocumentSessionClient {
     private deferredEvents: (() => void)[] = []
     private syncWaiters = new Set<(success: boolean) => void>()
     private state: DocumentState = {
-        status: 'loading', content: null, dirty: false, message: '', canUndo: false, canRedo: false,
+        status: 'loading', content: null, dirty: false, message: '', canUndo: false, canRedo: false, collaborators: [],
     }
 
     constructor(socket: Socket, fileId: number, userName: string, observer?: DocumentSessionObserver) {
@@ -81,6 +82,8 @@ export class DocumentSessionClient {
         this.socket.on('disconnect', this.disconnect)
         this.socket.on('connect_error', this.connectionError)
         this.socket.on('document:operation', this.receiveOperation)
+        this.socket.on('presence:update', this.receivePresence)
+        this.socket.on('presence:leave', this.receivePresenceLeave)
         this.socket.connect()
     }
 
@@ -125,9 +128,14 @@ export class DocumentSessionClient {
             this.undoStack = []
             this.redoStack = []
             this.discardOnJoin = false
-            this.update({ status: 'ready', content: reply.content, dirty: false, message: '' })
+            this.update({ status: 'ready', content: reply.content, dirty: false, message: '', collaborators: reply.collaborators ?? [] })
             this.resolveWaiters(true)
         })
+    }
+
+    updatePresence = (selection: CollaboratorSelection | null) => {
+        if (this.state.status !== 'ready' || !this.socket.connected) return
+        this.socket.emit('presence:update', { selection, pointer: null })
     }
 
     retry = () => {
@@ -172,6 +180,7 @@ export class DocumentSessionClient {
     private applyLocal(operation: TextOperation) {
         const content = applyOperation(this.state.content ?? '', operation)
         this.queue.push(operation)
+        this.transformCollaborators(operation)
         this.update({ content, dirty: true, message: '' })
         this.sendNext()
     }
@@ -229,10 +238,38 @@ export class DocumentSessionClient {
                 this.transformHistory(this.undoStack, remote)
                 this.transformHistory(this.redoStack, remote)
                 this.remoteListeners.forEach((listener) => listener(remote))
+                this.transformCollaborators(remote)
                 this.update({ content })
             } catch {
                 this.recover('La synchronisation a été interrompue. Conservez votre texte avant de recharger la version du serveur.')
             }
+        })
+    }
+
+    private receivePresence = (collaborator: Collaborator) => {
+        if (this.disposed) return
+        const collaborators = this.state.collaborators.filter((item) => item.clientId !== collaborator.clientId)
+        collaborators.push(collaborator)
+        this.update({ collaborators })
+    }
+
+    private receivePresenceLeave = ({ clientId }: { clientId: string }) => {
+        this.update({ collaborators: this.state.collaborators.filter((collaborator) => collaborator.clientId !== clientId) })
+    }
+
+    private transformCollaborators(operation: TextOperation) {
+        if (!this.state.collaborators.length) return
+        this.update({
+            collaborators: this.state.collaborators.map((collaborator) => {
+                if (!collaborator.selection) return collaborator
+                return {
+                    ...collaborator,
+                    selection: {
+                        anchor: transformIndex(collaborator.selection.anchor, operation),
+                        head: transformIndex(collaborator.selection.head, operation),
+                    },
+                }
+            }),
         })
     }
 
@@ -265,6 +302,8 @@ export class DocumentSessionClient {
         this.socket.off('disconnect', this.disconnect)
         this.socket.off('connect_error', this.connectionError)
         this.socket.off('document:operation', this.receiveOperation)
+        this.socket.off('presence:update', this.receivePresence)
+        this.socket.off('presence:leave', this.receivePresenceLeave)
         this.socket.disconnect()
     }
 }
