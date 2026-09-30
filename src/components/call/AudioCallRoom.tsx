@@ -1,4 +1,4 @@
-import type { AudioCallClient, AudioCallState, Collaborator } from '../../audio/AudioCallClient'
+import { MAX_CALL_MEMBERS, type AudioCallClient, type AudioCallState, type Collaborator } from '../../audio/AudioCallClient'
 import { useCallAlerts, useRingtonesPreference } from '../../audio/useCallAlerts'
 import { useSyncExternalStore, type ReactNode } from 'react'
 import { ChatPanel } from '../chat/ChatPanel'
@@ -6,6 +6,7 @@ import { RemoteAudio } from './RemoteAudio'
 import { Button } from '../shared/Button'
 
 const ACTIVE_CALL_STATUSES = ['incoming', 'outgoing', 'connecting', 'connected']
+const JOINED_CALL_STATUSES = ['outgoing', 'connecting', 'connected']
 
 function getInitials(name: string) {
     return name.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join('').toUpperCase() || '?'
@@ -43,11 +44,10 @@ function MicrophoneIcon({ muted }: { muted: boolean }) {
 function getCallStatusText(state: AudioCallState) {
     switch (state.status) {
         case 'outgoing': return 'Appel en cours…'
-        case 'incoming': return 'Vous appelle'
+        case 'incoming': return 'Vous invite à un appel'
         case 'connecting': return 'Connexion…'
         case 'connected': {
-            const details = ['En communication']
-            if (state.peerMuted) details.push(`${state.participant?.user.name ?? 'Votre interlocuteur'} a coupé son micro`)
+            const details = [`En communication à ${state.callMembers.length + 1}`]
             if (state.muted) details.push('votre micro est coupé')
             return details.join(' · ')
         }
@@ -132,9 +132,12 @@ export function AudioCallRoom({ client, onRetry }: {
     const { ringtonesMuted, toggleRingtones } = useRingtonesPreference()
     useCallAlerts({ status: state.status, callerName: state.participant?.user.name ?? '', ringtonesMuted })
     const busy = ACTIVE_CALL_STATUSES.includes(state.status)
-    const callParticipant = state.status !== 'idle' ? state.participant : null
-    const isCallParticipantPresent = state.collaborators.some((collaborator) => collaborator.clientId === callParticipant?.clientId)
-    const listedParticipants = callParticipant && !isCallParticipantPresent ? [...state.collaborators, callParticipant] : state.collaborators
+    const isInCall = JOINED_CALL_STATUSES.includes(state.status)
+    const isCallFull = state.callMembers.length + state.invitedClientIds.length + 1 >= MAX_CALL_MEMBERS
+    const canCall = state.connection === 'ready' && (isInCall ? !isCallFull : !busy)
+    const incomingCaller = state.status === 'incoming' ? state.participant : null
+    const isIncomingCallerPresent = state.collaborators.some((collaborator) => collaborator.clientId === incomingCaller?.clientId)
+    const listedParticipants = incomingCaller && !isIncomingCallerPresent ? [...state.collaborators, incomingCaller] : state.collaborators
 
     return (
         <div className="flex flex-col gap-4 xl:h-[calc(100vh-8rem)]">
@@ -184,49 +187,79 @@ export function AudioCallRoom({ client, onRetry }: {
                 {listedParticipants.length > 0 && (
                     <ul className="mt-3 max-h-64 space-y-1 overflow-y-auto">
                         {listedParticipants.map((collaborator) => {
-                            const isInCall = collaborator.clientId === callParticipant?.clientId
-                            if (!isInCall) {
+                            const callMember = state.callMembers.find((member) => member.collaborator.clientId === collaborator.clientId)
+                            if (callMember) {
                                 return (
-                                    <ParticipantRow key={collaborator.clientId} collaborator={collaborator}>
-                                        <button
-                                            type="button"
-                                            disabled={busy || state.connection !== 'ready'}
-                                            onClick={() => void client.start(collaborator)}
-                                            aria-label={`Appeler ${collaborator.user.name}`}
-                                            title={`Appeler ${collaborator.user.name}`}
-                                            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
-                                        >
-                                            <PhoneIcon />
-                                        </button>
+                                    <ParticipantRow key={collaborator.clientId} collaborator={collaborator} highlight={callMember.connected ? 'connected' : 'other'} isMicrophoneMuted={callMember.muted}>
+                                        <p className={`mt-1 pl-11 text-xs font-medium ${callMember.connected ? 'text-green-700' : 'text-slate-600'}`}>
+                                            {callMember.connected ? 'En communication' : 'Connexion…'}
+                                        </p>
                                     </ParticipantRow>
                                 )
                             }
-                            const highlight = state.status === 'incoming' ? 'incoming' : state.status === 'connected' ? 'connected' : 'other'
-                            return (
-                                <ParticipantRow key={collaborator.clientId} collaborator={collaborator} highlight={highlight} isMicrophoneMuted={state.status === 'connected' && state.peerMuted}>
-                                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 pl-11">
-                                        <p
-                                            role={state.status === 'error' ? 'alert' : 'status'}
-                                            className={`text-xs font-medium ${state.status === 'error' ? 'text-red-700' : state.status === 'connected' ? 'text-green-700' : 'text-slate-600'}`}
-                                        >
-                                            {getCallStatusText(state)}
+                            if (state.invitedClientIds.includes(collaborator.clientId)) {
+                                return (
+                                    <ParticipantRow key={collaborator.clientId} collaborator={collaborator} highlight="other">
+                                        <p className="mt-1 pl-11 text-xs font-medium text-slate-600">
+                                            Appel en cours…
                                         </p>
-                                        <div className="flex items-center gap-2">
-                                            <CallControls client={client} state={state} />
+                                    </ParticipantRow>
+                                )
+                            }
+                            if (state.status === 'incoming' && collaborator.clientId === state.participant?.clientId) {
+                                return (
+                                    <ParticipantRow key={collaborator.clientId} collaborator={collaborator} highlight="incoming">
+                                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 pl-11">
+                                            <p role="status" className="text-xs font-medium text-slate-600">
+                                                {getCallStatusText(state)}
+                                            </p>
+                                            <div className="flex items-center gap-2">
+                                                <CallControls client={client} state={state} />
+                                            </div>
                                         </div>
-                                    </div>
-                                    {state.message && ACTIVE_CALL_STATUSES.includes(state.status) && (
-                                        <p className="mt-1 pl-11 text-xs text-slate-500">
-                                            {state.message}
-                                        </p>
-                                    )}
+                                    </ParticipantRow>
+                                )
+                            }
+                            const callLabel = isInCall ? `Ajouter ${collaborator.user.name} à l’appel` : `Appeler ${collaborator.user.name}`
+                            return (
+                                <ParticipantRow key={collaborator.clientId} collaborator={collaborator}>
+                                    <button
+                                        type="button"
+                                        disabled={!canCall}
+                                        onClick={() => void client.start(collaborator)}
+                                        aria-label={callLabel}
+                                        title={isInCall && isCallFull ? `Appel complet (${MAX_CALL_MEMBERS} personnes maximum)` : callLabel}
+                                        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                        {isInCall ? <span aria-hidden="true" className="text-base font-semibold leading-none">+</span> : <PhoneIcon />}
+                                    </button>
                                 </ParticipantRow>
                             )
                         })}
                     </ul>
                 )}
+                {state.status !== 'idle' && state.status !== 'incoming' && (
+                    <div className={`mt-3 rounded-lg border px-3 py-2 ${state.status === 'connected' ? 'border-green-300 bg-green-50' : 'border-slate-200 bg-slate-50'}`}>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p
+                                role={state.status === 'error' ? 'alert' : 'status'}
+                                className={`text-xs font-medium ${state.status === 'error' ? 'text-red-700' : state.status === 'connected' ? 'text-green-700' : 'text-slate-600'}`}
+                            >
+                                {getCallStatusText(state)}
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <CallControls client={client} state={state} />
+                            </div>
+                        </div>
+                        {state.message && isInCall && (
+                            <p className="mt-1 text-xs text-slate-500">
+                                {state.message}
+                            </p>
+                        )}
+                    </div>
+                )}
             </section>
-            {state.remoteStream && <RemoteAudio stream={state.remoteStream} />}
+            {state.callMembers.map((member) => member.stream && <RemoteAudio key={member.collaborator.clientId} stream={member.stream} />)}
             <ChatPanel socket={client.socket} isJoined={state.connection === 'ready'} />
         </div>
     )

@@ -4,6 +4,8 @@ import type { CallStatus } from '../components/call/types'
 import type { Collaborator } from '../documents/types'
 export type { Collaborator } from '../documents/types'
 
+export const MAX_CALL_MEMBERS = 6
+
 interface CallSignal {
     clientId: string
     description?: RTCSessionDescriptionInit
@@ -12,6 +14,7 @@ interface CallSignal {
 
 interface CallReply {
     callId?: string
+    participants?: Collaborator[]
     error?: string
 }
 
@@ -20,21 +23,35 @@ interface JoinReply {
     error?: string
 }
 
+export interface CallMember {
+    collaborator: Collaborator
+    connected: boolean
+    muted: boolean
+    stream: MediaStream | null
+}
+
 export interface AudioCallState {
     connection: 'connecting' | 'ready' | 'error'
     connectionError: string
     collaborators: Collaborator[]
     status: CallStatus
     participant: Collaborator | null
+    callMembers: CallMember[]
+    invitedClientIds: string[]
     muted: boolean
-    peerMuted: boolean
     message: string
-    remoteStream: MediaStream | null
 }
 
 interface CallResources {
     acquireMicrophone: () => Promise<MediaStream>
     createPeer: () => RTCPeerConnection
+}
+
+interface PeerLink {
+    peer: RTCPeerConnection
+    candidates: RTCIceCandidateInit[]
+    signalQueue: Promise<void>
+    disconnectDeadline?: ReturnType<typeof setTimeout>
 }
 
 export class AudioCallClient {
@@ -49,14 +66,11 @@ export class AudioCallClient {
     private callId: string | null = null
     private active = false
     private localStream: MediaStream | null = null
-    private peer: RTCPeerConnection | null = null
-    private candidates: RTCIceCandidateInit[] = []
-    private signalQueue: Promise<void> = Promise.resolve()
+    private links = new Map<string, PeerLink>()
     private deadline: ReturnType<typeof setTimeout> | undefined
-    private disconnectDeadline: ReturnType<typeof setTimeout> | undefined
     private state: AudioCallState = {
         connection: 'connecting', connectionError: '', collaborators: [],
-        status: 'idle', participant: null, muted: false, peerMuted: false, message: '', remoteStream: null,
+        status: 'idle', participant: null, callMembers: [], invitedClientIds: [], muted: false, message: '',
     }
 
     constructor(socket: Socket, fileId: number, userName: string, resources: CallResources, managesDocument = true) {
@@ -79,6 +93,7 @@ export class AudioCallClient {
         socket.on('call:accepted', this.accepted)
         socket.on('call:signal', this.receiveSignal)
         socket.on('call:mute', this.peerMuteChanged)
+        socket.on('call:left', this.left)
         socket.on('call:ended', this.ended)
         if (this.managesDocument) socket.connect()
     }
@@ -151,16 +166,21 @@ export class AudioCallClient {
     }
 
     private removePresence = ({ clientId }: { clientId: string }) => {
+        const name = this.getName(clientId)
         this.update({ collaborators: this.state.collaborators.filter((collaborator) => collaborator.clientId !== clientId) })
-        if (this.active && this.state.participant?.clientId === clientId) {
-            this.finish('ended', 'Le correspondant a quitté le document.')
-        }
+        this.dropMember(clientId, `${name} a quitté le document.`)
+    }
+
+    private getName(clientId: string) {
+        const collaborator = this.state.collaborators.find((current) => current.clientId === clientId)
+            ?? this.state.callMembers.find((member) => member.collaborator.clientId === clientId)?.collaborator
+        return collaborator?.user.name ?? 'Le correspondant'
     }
 
     private begin(participant: Collaborator, status: CallStatus) {
         this.generation += 1
         this.active = true
-        this.update({ participant, status, muted: false, peerMuted: false, message: '', remoteStream: null })
+        this.update({ participant, status, muted: false, message: '', callMembers: [], invitedClientIds: [] })
         this.setDeadline('L’appel n’a pas abouti. Vous pouvez réessayer.', 60000)
         return this.generation
     }
@@ -169,47 +189,94 @@ export class AudioCallClient {
         return !this.disposed && this.active && generation === this.generation
     }
 
+    private isLinkCurrent(generation: number, clientId: string, link: PeerLink) {
+        return this.isCurrent(generation) && this.links.get(clientId) === link
+    }
+
     private setDeadline(message: string, delay: number) {
         clearTimeout(this.deadline)
         this.deadline = setTimeout(() => this.finish('error', message), delay)
     }
 
-    private async preparePeer(generation: number) {
+    private async acquireMicrophone(generation: number) {
         const stream = await this.resources.acquireMicrophone()
         if (!this.isCurrent(generation)) {
             stream.getTracks().forEach((track) => track.stop())
             return false
         }
         this.localStream = stream
-        const peer = this.resources.createPeer()
-        this.peer = peer
         stream.getTracks().forEach((track) => {
-            peer.addTrack(track, stream)
             track.onended = () => {
                 if (this.isCurrent(generation)) this.finish('error', 'Le microphone a été déconnecté.')
             }
         })
+        return true
+    }
+
+    private createLink(clientId: string, generation: number) {
+        const peer = this.resources.createPeer()
+        const link: PeerLink = { peer, candidates: [], signalQueue: Promise.resolve() }
+        this.links.set(clientId, link)
+        const stream = this.localStream
+        stream?.getTracks().forEach((track) => peer.addTrack(track, stream))
         peer.onicecandidate = ({ candidate }) => {
-            if (candidate && this.isCurrent(generation)) this.sendSignal({ candidate: candidate.toJSON() })
+            if (candidate && this.isLinkCurrent(generation, clientId, link)) this.sendSignal(clientId, { candidate: candidate.toJSON() })
         }
         peer.ontrack = ({ streams }) => {
-            if (this.isCurrent(generation) && streams[0]) this.update({ remoteStream: streams[0] })
+            if (this.isLinkCurrent(generation, clientId, link) && streams[0]) this.updateMember(clientId, { stream: streams[0] })
         }
         peer.onconnectionstatechange = () => {
-            if (!this.isCurrent(generation)) return
+            if (!this.isLinkCurrent(generation, clientId, link)) return
             if (peer.connectionState === 'connected') {
                 clearTimeout(this.deadline)
-                clearTimeout(this.disconnectDeadline)
+                clearTimeout(link.disconnectDeadline)
+                this.updateMember(clientId, { connected: true })
                 this.update({ status: 'connected', message: '' })
             } else if (peer.connectionState === 'failed') {
-                this.finish('error', 'La connexion audio a échoué. Vérifiez votre réseau et réessayez.')
+                this.dropMember(clientId, `La connexion audio avec ${this.getName(clientId)} a échoué.`)
             } else if (peer.connectionState === 'disconnected') {
-                this.update({ message: 'Connexion audio interrompue, tentative de récupération…' })
-                clearTimeout(this.disconnectDeadline)
-                this.disconnectDeadline = setTimeout(() => this.finish('error', 'La connexion audio a été perdue.'), 10000)
+                this.update({ message: `Connexion audio avec ${this.getName(clientId)} interrompue, tentative de récupération…` })
+                clearTimeout(link.disconnectDeadline)
+                link.disconnectDeadline = setTimeout(() => this.dropMember(clientId, `La connexion audio avec ${this.getName(clientId)} a été perdue.`), 10000)
             }
         }
-        return true
+        return link
+    }
+
+    private closeLink(clientId: string) {
+        const link = this.links.get(clientId)
+        if (!link) return
+        clearTimeout(link.disconnectDeadline)
+        link.peer.close()
+        this.links.delete(clientId)
+    }
+
+    private addMember(collaborator: Collaborator) {
+        const callMembers = this.state.callMembers.filter((member) => member.collaborator.clientId !== collaborator.clientId)
+        this.update({
+            callMembers: [...callMembers, { collaborator, connected: false, muted: false, stream: null }],
+            invitedClientIds: this.state.invitedClientIds.filter((clientId) => clientId !== collaborator.clientId),
+        })
+    }
+
+    private updateMember(clientId: string, patch: Partial<CallMember>) {
+        this.update({
+            callMembers: this.state.callMembers.map((member) => member.collaborator.clientId === clientId ? { ...member, ...patch } : member),
+        })
+    }
+
+    private dropMember(clientId: string, message: string) {
+        const isMember = this.state.callMembers.some((member) => member.collaborator.clientId === clientId)
+        if (!this.active || (!isMember && !this.state.invitedClientIds.includes(clientId))) return
+        this.closeLink(clientId)
+        const callMembers = this.state.callMembers.filter((member) => member.collaborator.clientId !== clientId)
+        const invitedClientIds = this.state.invitedClientIds.filter((invitedClientId) => invitedClientId !== clientId)
+        if (callMembers.length === 0 && invitedClientIds.length === 0) {
+            this.finish('ended', message)
+            return
+        }
+        const status = callMembers.some((member) => member.connected) ? 'connected' : callMembers.length > 0 ? 'connecting' : 'outgoing'
+        this.update({ callMembers, invitedClientIds, status, message })
     }
 
     private mediaFailed(failure: unknown, generation: number) {
@@ -223,31 +290,45 @@ export class AudioCallClient {
         this.finish('error', message)
     }
 
-    start = async (participant: Collaborator) => {
-        if (this.active || this.state.connection !== 'ready') return
-        const generation = this.begin(participant, 'connecting')
+    start = async (collaborator: Collaborator) => {
+        if (this.state.connection !== 'ready') return
+        if (this.active) {
+            this.invite(collaborator)
+            return
+        }
+        const generation = this.begin(collaborator, 'connecting')
         this.update({ message: 'Autorisez le microphone pour démarrer l’appel.' })
         try {
-            if (!await this.preparePeer(generation)) return
+            if (!await this.acquireMicrophone(generation)) return
             this.update({ status: 'outgoing', message: '' })
-            this.socket.timeout(10000).emit('call:invite', { targetClientId: participant.clientId }, (failure: Error | null, reply?: CallReply) => {
-                if (!this.isCurrent(generation)) return
-                if (failure || reply?.error || !reply?.callId) {
-                    this.finish('error', reply?.error || 'L’invitation n’a pas été confirmée par le serveur.')
-                    return
-                }
-                this.callId = reply.callId
-            })
+            this.invite(collaborator)
         } catch (failure) {
             this.mediaFailed(failure, generation)
         }
     }
 
+    private invite(collaborator: Collaborator) {
+        const { callMembers, invitedClientIds, status } = this.state
+        const isAlreadyInCall = invitedClientIds.includes(collaborator.clientId)
+            || callMembers.some((member) => member.collaborator.clientId === collaborator.clientId)
+        if (!this.active || !this.localStream || status === 'incoming' || isAlreadyInCall) return
+        if (callMembers.length + invitedClientIds.length + 1 >= MAX_CALL_MEMBERS) return
+        const generation = this.generation
+        this.update({ invitedClientIds: [...invitedClientIds, collaborator.clientId] })
+        this.socket.timeout(10000).emit('call:invite', { targetClientId: collaborator.clientId }, (failure: Error | null, reply?: CallReply) => {
+            if (!this.isCurrent(generation)) return
+            if (failure || reply?.error || !reply?.callId) {
+                const message = reply?.error || 'L’invitation n’a pas été confirmée par le serveur.'
+                if (this.state.callMembers.length === 0 && this.state.invitedClientIds.length <= 1) this.finish('error', message)
+                else this.dropMember(collaborator.clientId, message)
+                return
+            }
+            this.callId = reply.callId
+        })
+    }
+
     private incoming = ({ callId, caller }: { callId: string; caller: Collaborator }) => {
-        if (this.active) {
-            this.socket.emit('call:hangup')
-            return
-        }
+        if (this.active) return
         this.begin(caller, 'incoming')
         this.callId = callId
     }
@@ -257,75 +338,95 @@ export class AudioCallClient {
         const generation = this.generation
         this.update({ status: 'connecting', message: 'Autorisez le microphone pour rejoindre l’appel.' })
         try {
-            if (!await this.preparePeer(generation)) return
+            if (!await this.acquireMicrophone(generation)) return
             this.socket.timeout(10000).emit('call:accept', { callId: this.callId }, (failure: Error | null, reply?: CallReply) => {
                 if (!this.isCurrent(generation)) return
-                if (failure || reply?.error || !reply?.callId) {
+                if (failure || reply?.error || !reply?.callId || !reply.participants) {
                     this.finish('error', reply?.error || 'Le serveur n’a pas confirmé l’appel.')
                     return
                 }
                 this.update({ message: '' })
                 this.setDeadline('La connexion audio prend trop de temps. Réessayez.', 30000)
+                reply.participants.forEach((participant) => {
+                    this.addMember(participant)
+                    this.sendOffer(participant.clientId, generation)
+                })
             })
         } catch (failure) {
             this.mediaFailed(failure, generation)
         }
     }
 
-    private accepted = ({ callId, clientId }: { callId: string; clientId: string }) => {
-        if (!this.active || this.callId !== callId || this.state.participant?.clientId !== clientId) return
-        const generation = this.generation
-        const peer = this.peer
-        if (!peer) return
-        this.update({ status: 'connecting', message: '' })
-        this.setDeadline('La connexion audio prend trop de temps. Réessayez.', 30000)
+    private sendOffer(clientId: string, generation: number) {
+        const link = this.createLink(clientId, generation)
         void (async () => {
-            const offer = await peer.createOffer()
-            if (!this.isCurrent(generation)) return
-            await peer.setLocalDescription(offer)
-            if (this.isCurrent(generation)) this.sendSignal({ description: offer })
+            const offer = await link.peer.createOffer()
+            if (!this.isLinkCurrent(generation, clientId, link)) return
+            await link.peer.setLocalDescription(offer)
+            if (this.isLinkCurrent(generation, clientId, link)) this.sendSignal(clientId, { description: offer })
         })().catch(() => {
-            if (this.isCurrent(generation)) this.finish('error', 'Impossible de négocier la connexion audio.')
+            if (this.isLinkCurrent(generation, clientId, link)) this.dropMember(clientId, 'Impossible de négocier la connexion audio.')
         })
     }
 
-    private sendSignal(signal: { description?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit }) {
-        if (this.socket.connected && this.state.participant) {
-            this.socket.emit('call:signal', { targetClientId: this.state.participant.clientId, ...signal })
+    private accepted = ({ callId, clientId }: { callId: string; clientId: string }) => {
+        if (!this.active || this.callId !== callId || !this.localStream) return
+        const collaborator = this.state.collaborators.find((current) => current.clientId === clientId)
+        if (!collaborator) return
+        this.addMember(collaborator)
+        this.createLink(clientId, this.generation)
+        if (this.state.status !== 'connected') {
+            this.update({ status: 'connecting', message: '' })
+            this.setDeadline('La connexion audio prend trop de temps. Réessayez.', 30000)
         }
     }
 
+    private sendSignal(clientId: string, signal: { description?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit }) {
+        if (this.socket.connected) this.socket.emit('call:signal', { targetClientId: clientId, ...signal })
+    }
+
     private receiveSignal = (signal: CallSignal) => {
-        if (!this.active || signal.clientId !== this.state.participant?.clientId) return
+        const clientId = signal.clientId
+        const link = this.links.get(clientId)
+        if (!this.active || !link) return
         const generation = this.generation
-        this.signalQueue = this.signalQueue.then(async () => {
-            const peer = this.peer
-            if (!peer || !this.isCurrent(generation)) return
+        link.signalQueue = link.signalQueue.then(async () => {
+            const peer = link.peer
+            if (!this.isLinkCurrent(generation, clientId, link)) return
             if (signal.description) {
                 await peer.setRemoteDescription(signal.description)
-                if (!this.isCurrent(generation)) return
-                for (const candidate of this.candidates.splice(0)) {
+                if (!this.isLinkCurrent(generation, clientId, link)) return
+                for (const candidate of link.candidates.splice(0)) {
                     await peer.addIceCandidate(candidate)
-                    if (!this.isCurrent(generation)) return
+                    if (!this.isLinkCurrent(generation, clientId, link)) return
                 }
                 if (signal.description.type === 'offer') {
                     const answer = await peer.createAnswer()
-                    if (!this.isCurrent(generation)) return
+                    if (!this.isLinkCurrent(generation, clientId, link)) return
                     await peer.setLocalDescription(answer)
-                    if (this.isCurrent(generation)) this.sendSignal({ description: answer })
+                    if (this.isLinkCurrent(generation, clientId, link)) this.sendSignal(clientId, { description: answer })
                 }
             } else if (signal.candidate) {
                 if (peer.remoteDescription) await peer.addIceCandidate(signal.candidate)
-                else this.candidates.push(signal.candidate)
+                else link.candidates.push(signal.candidate)
             }
         }).catch(() => {
-            if (this.isCurrent(generation)) this.finish('error', 'La négociation audio a échoué. Réessayez.')
+            if (this.isLinkCurrent(generation, clientId, link)) this.dropMember(clientId, 'La négociation audio a échoué. Réessayez.')
         })
+    }
+
+    private left = ({ callId, clientId, reason }: { callId: string; clientId: string; reason: string }) => {
+        if (callId !== this.callId) return
+        const name = this.getName(clientId)
+        this.dropMember(clientId, reason === 'declined' ? `${name} a refusé l’appel.` : `${name} a quitté l’appel.`)
     }
 
     private ended = ({ callId, reason }: { callId: string; reason: string }) => {
         if (callId !== this.callId) return
-        this.finish('ended', reason === 'declined' ? 'Le correspondant a refusé l’appel.' : 'Le correspondant a terminé l’appel.', false)
+        const message = reason === 'declined'
+            ? 'Le correspondant a refusé l’appel.'
+            : this.state.callMembers.length > 1 ? 'Les autres participants ont quitté l’appel.' : 'Le correspondant a terminé l’appel.'
+        this.finish('ended', message, false)
     }
 
     toggleMute = () => {
@@ -337,15 +438,14 @@ export class AudioCallClient {
     }
 
     private peerMuteChanged = ({ clientId, muted }: { clientId: string; muted: boolean }) => {
-        if (!this.active || clientId !== this.state.participant?.clientId) return
-        this.update({ peerMuted: muted })
+        if (this.active) this.updateMember(clientId, { muted })
     }
 
     hangUp = () => this.finish('ended', 'Appel terminé.')
 
     reset = () => {
         if (this.active) return
-        this.update({ status: 'idle', participant: null, message: '', muted: false, peerMuted: false })
+        this.update({ status: 'idle', participant: null, message: '', muted: false, callMembers: [], invitedClientIds: [] })
     }
 
     private finish(status: CallStatus, message: string, notifyPeer = true) {
@@ -354,14 +454,10 @@ export class AudioCallClient {
         this.generation += 1
         this.callId = null
         clearTimeout(this.deadline)
-        clearTimeout(this.disconnectDeadline)
-        this.peer?.close()
-        this.peer = null
+        for (const clientId of [...this.links.keys()]) this.closeLink(clientId)
         this.localStream?.getTracks().forEach((track) => { track.onended = null; track.stop() })
         this.localStream = null
-        this.candidates = []
-        this.signalQueue = Promise.resolve()
-        this.update({ status, message, remoteStream: null, muted: false, peerMuted: false })
+        this.update({ status, message, muted: false, callMembers: [], invitedClientIds: [] })
     }
 
     dispose() {
@@ -376,6 +472,7 @@ export class AudioCallClient {
         this.socket.off('call:accepted', this.accepted)
         this.socket.off('call:signal', this.receiveSignal)
         this.socket.off('call:mute', this.peerMuteChanged)
+        this.socket.off('call:left', this.left)
         this.socket.off('call:ended', this.ended)
         if (this.managesDocument) {
             if (this.socket.connected) this.socket.emit('document:leave')
