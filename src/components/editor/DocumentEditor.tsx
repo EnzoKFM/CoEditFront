@@ -140,8 +140,8 @@ export function DocumentEditor({ content, onChange, editable = true, canUndo, ca
                         onKeyUp={sendPresence}
                     />
                     {collaborators.map((collaborator) => {
-                        if (!collaborator.selection) return null
-                        const position = getCaretPosition(textarea.current!, content, collaborator.selection.head)
+                        if (!collaborator.selection || !textareaElement) return null
+                        const position = getCaretPosition(textareaElement, content, collaborator.selection.head)
                         const color = getCollaboratorColor(collaborator)
                         return (
                             <div key={collaborator.clientId} className="pointer-events-none absolute z-10" style={{ left: position.left, top: position.top + 32, color }}>
