@@ -30,6 +30,12 @@ export function createAudioCallClient(fileId: number, userName: string, document
             }
             return navigator.mediaDevices.getUserMedia({ audio: true, video: false })
         },
+        acquireCamera: () => {
+            if (!navigator.mediaDevices?.getUserMedia) {
+                return Promise.reject(new Error('La caméra nécessite HTTPS ou localhost.'))
+            }
+            return navigator.mediaDevices.getUserMedia({ audio: false, video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } })
+        },
         createPeer: () => new RTCPeerConnection({ iceServers: getIceServers() }),
     }, !documentSocket)
 }

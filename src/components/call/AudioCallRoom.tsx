@@ -1,16 +1,15 @@
 import { MAX_CALL_MEMBERS, type AudioCallClient, type AudioCallState, type Collaborator } from '../../audio/AudioCallClient'
 import { useCallAlerts, useRingtonesPreference } from '../../audio/useCallAlerts'
-import { useSyncExternalStore, type ReactNode } from 'react'
+import { useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ChatPanel } from '../chat/ChatPanel'
+import { CallMiniBar, CallStage } from './CallStage'
+import { MicrophoneIcon } from './callIcons'
+import { getInitials } from './getInitials'
 import { RemoteAudio } from './RemoteAudio'
 import { Button } from '../shared/Button'
 
 const ACTIVE_CALL_STATUSES = ['incoming', 'outgoing', 'connecting', 'connected']
 const JOINED_CALL_STATUSES = ['outgoing', 'connecting', 'connected']
-
-function getInitials(name: string) {
-    return name.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join('').toUpperCase() || '?'
-}
 
 function PhoneIcon() {
     return (
@@ -25,17 +24,6 @@ function BellIcon({ muted }: { muted: boolean }) {
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
             <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
             <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-            {muted && <line x1="3" x2="21" y1="3" y2="21" />}
-        </svg>
-    )
-}
-
-function MicrophoneIcon({ muted }: { muted: boolean }) {
-    return (
-        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-            <line x1="12" x2="12" y1="19" y2="22" />
             {muted && <line x1="3" x2="21" y1="3" y2="21" />}
         </svg>
     )
@@ -123,7 +111,7 @@ function ParticipantRow({ collaborator, children, highlight, isMicrophoneMuted =
     )
 }
 
-export function AudioCallRoom({ client, onRetry }: {
+export function AudioCallRoom({ client, documentName, onRetry }: {
     client: AudioCallClient
     documentName: string
     onRetry: () => void
@@ -135,6 +123,12 @@ export function AudioCallRoom({ client, onRetry }: {
     const isInCall = JOINED_CALL_STATUSES.includes(state.status)
     const isCallFull = state.callMembers.length + state.invitedClientIds.length + 1 >= MAX_CALL_MEMBERS
     const canCall = state.connection === 'ready' && (isInCall ? !isCallFull : !busy)
+    const [isStageMinimized, setIsStageMinimized] = useState(false)
+    const [wasInCall, setWasInCall] = useState(isInCall)
+    if (wasInCall !== isInCall) {
+        setWasInCall(isInCall)
+        if (isInCall) setIsStageMinimized(false)
+    }
     const incomingCaller = state.status === 'incoming' ? state.participant : null
     const isIncomingCallerPresent = state.collaborators.some((collaborator) => collaborator.clientId === incomingCaller?.clientId)
     const listedParticipants = incomingCaller && !isIncomingCallerPresent ? [...state.collaborators, incomingCaller] : state.collaborators
@@ -260,6 +254,12 @@ export function AudioCallRoom({ client, onRetry }: {
                 )}
             </section>
             {state.callMembers.map((member) => member.stream && <RemoteAudio key={member.collaborator.clientId} stream={member.stream} />)}
+            {isInCall && !isStageMinimized && (
+                <CallStage client={client} state={state} documentName={documentName} statusText={getCallStatusText(state)} onMinimize={() => setIsStageMinimized(true)} />
+            )}
+            {isInCall && isStageMinimized && (
+                <CallMiniBar client={client} state={state} statusText={getCallStatusText(state)} onExpand={() => setIsStageMinimized(false)} />
+            )}
             <ChatPanel socket={client.socket} isJoined={state.connection === 'ready'} />
         </div>
     )
