@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-import { apiFetch } from "./lib/api";
 import { formatDateTime, formatRelativeTime } from "./lib/formatDate";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { apiFetch, getErrorMessage } from "./lib/api";
+import { uploadBinaryFile } from "./documents/binaryFileApi";
+import { getFileIcon, isBinaryFile } from "./documents/binaryFileKind";
 import { ShareFolderDialog } from "./components/share/ShareFolderDialog";
 import { listSharedFolders, sharePermissionLabels, type SharedFolder } from "./shares/shareApi";
 
@@ -17,6 +19,7 @@ export type DocumentNode = {
     size?: number;
     createdAt?: string;
     createdBy?: NodeAuthor | null;
+    mimeType?: string | null;
     updatedAt: string;
     updatedBy?: NodeAuthor | null;
 };
@@ -48,6 +51,7 @@ type FolderResponse = {
 
 interface ArborescenceProps {
     selectedFileId?: number;
+    replacedFile?: DocumentNode | null;
     onFileSelect?: (file: DocumentNode, ancestorIds: number[]) => void;
     onNodeRenamed?: (nodeId: number, name: string) => void;
     onNodeDeleted?: (nodeId: number) => void;
@@ -59,7 +63,7 @@ const ROOT_DESTINATION = "root";
 
 type MoveDestination = number | typeof ROOT_DESTINATION;
 
-function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDeleted, onNodeMoved, canDeleteNode }: ArborescenceProps) {
+function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRenamed, onNodeDeleted, onNodeMoved, canDeleteNode }: ArborescenceProps) {
     const [folders, setFolders] = useState<DocumentNode[]>([]);
     const [currentFolder, setCurrentFolder] = useState<number | null>(null);
     const [currentFolderData, setCurrentFolderData] = useState<FolderResponse["folder"]>(null);
@@ -73,10 +77,19 @@ function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDelet
     const [folderToShare, setFolderToShare] = useState<DocumentNode | null>(null);
     const latestNavigationRequestId = useRef(0);
     const moveDialog = useRef<HTMLDialogElement>(null);
+    const importFileInput = useRef<HTMLInputElement>(null);
+    const [appliedReplacedFile, setAppliedReplacedFile] = useState(replacedFile);
     const currentPermission = currentFolder === null ? "owner" : currentFolderData?.permission ?? "read";
     const canShareFolders = currentPermission === "owner";
     const canWrite = currentPermission !== "read";
     const canMoveOrDelete = currentPermission === "owner" || currentPermission === "delete";
+
+    if (replacedFile !== appliedReplacedFile) {
+        setAppliedReplacedFile(replacedFile);
+        if (replacedFile) {
+            setFolders((currentNodes) => currentNodes.map((currentNode) => currentNode.id === replacedFile.id ? { ...currentNode, name: replacedFile.name, mimeType: replacedFile.mimeType, size: replacedFile.size, updatedAt: replacedFile.updatedAt } : currentNode));
+        }
+    }
 
     useEffect(() => {
         apiFetch<FolderResponse>("/api/folders/root/children")
@@ -205,6 +218,33 @@ function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDelet
             .catch((error) => {
                 console.error(error);
                 alert("Impossible de créer le fichier.");
+            });
+    }
+
+    function importFile(event: ChangeEvent<HTMLInputElement>) {
+        const importedFile = event.target.files?.[0];
+        event.target.value = "";
+
+        if (!importedFile) {
+            return;
+        }
+
+        uploadBinaryFile(importedFile, currentFolder)
+            .then((createdFile) => {
+                onFileSelect?.(createdFile, [...breadcrumb.map((folder) => folder.id), ...(currentFolder === null ? [] : [currentFolder])]);
+
+                if (currentFolder === null) {
+                    return apiFetch<FolderResponse>("/api/folders/root/children")
+                        .then((data) => {
+                            setFolders(data.children);
+                        });
+                }
+
+                openFolder(currentFolder);
+            })
+            .catch((error) => {
+                console.error(error);
+                alert(`Impossible d'importer le fichier : ${getErrorMessage(error)}`);
             });
     }
 
@@ -404,6 +444,20 @@ function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDelet
                         >
                             📄 Nouveau fichier
                         </button>
+
+                        <button
+                            className="border-0 rounded-md px-3.5 py-2.5 bg-blue-600 text-white text-sm cursor-pointer hover:bg-blue-700"
+                            onClick={() => importFileInput.current?.click()}
+                        >
+                            📎 Importer un fichier
+                        </button>
+
+                        <input
+                            ref={importFileInput}
+                            type="file"
+                            className="hidden"
+                            onChange={importFile}
+                        />
                     </div>
                 )}
             </div>
@@ -451,14 +505,14 @@ function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDelet
                             type="button"
                             className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-2 text-left hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-indigo-600"
                             aria-current={selectedFileId === folder.id ? 'true' : undefined}
-                            aria-label={`${folder.type === 'folder' ? 'Ouvrir le dossier' : 'Modifier le fichier'} ${folder.name}`}
+                            aria-label={`${folder.type === 'folder' ? 'Ouvrir le dossier' : isBinaryFile(folder.mimeType) ? 'Ouvrir le fichier' : 'Modifier le fichier'} ${folder.name}`}
                             onClick={() => {
                                 if (folder.type === 'folder') openFolder(folder.id);
                                 else onFileSelect?.(folder, [...breadcrumb.map((ancestor) => ancestor.id), ...(currentFolder === null ? [] : [currentFolder])]);
                             }}
                         >
                             <span aria-hidden="true" className="text-xl">
-                                {folder.type === "folder" ? "📁" : "📄"}
+                                {folder.type === "folder" ? "📁" : getFileIcon(folder.mimeType)}
                             </span>
 
                             <span className="min-w-0 break-words text-sm text-gray-700">

@@ -69,6 +69,19 @@ L’éditeur travaille directement sur une chaîne Markdown. L’aperçu affiche
 listes, liens et styles ; la barre d’outils insère leur syntaxe dans le texte.
 Le HTML saisi est affiché comme du texte dans l’aperçu.
 
+### Fichiers binaires
+
+« Importer un fichier » envoie un PDF, une image ou tout autre fichier (20 Mo maximum) dans
+le dossier courant, via `POST /api/files`. Son icône dépend du type MIME : 🖼️ image, 📕 PDF,
+📎 autre ; 📄 reste celle des documents texte, dont `mimeType` vaut `null`.
+Un fichier binaire s’ouvre dans une visionneuse, sans collaboration temps réel ni appel :
+aperçu des images et des PDF, téléchargement pour tous les types. « Remplacer le fichier »
+(permission écriture) remplace son contenu via `PUT /api/files/:fileId/binary`, puis lui donne
+le nom du fichier envoyé via `PATCH /api/nodes/:nodeId` ; si ce nom est déjà pris dans le dossier,
+le contenu reste remplacé et l’ancien nom est conservé, avec un message d’erreur.
+Les octets sont chargés avec `fetch` puis affichés depuis une URL `blob:` ; les autres types
+(HTML compris) ne sont jamais affichés dans la page, seulement téléchargés.
+
 ## Partage de dossiers
 
 Le bouton 👥 d’un dossier dont on est propriétaire ouvre la fenêtre de partage : saisir l’adresse email d’un compte, choisir la permission (lecture, écriture, écriture et suppression) et confirmer. La même fenêtre liste les utilisateurs ayant accès, permet de modifier la permission de chacun ou de lui retirer l’accès.
@@ -148,12 +161,14 @@ npm run build
 npm run lint
 npm run test:audio
 npm run test:documents
+npm run test:files
 ```
 
 Les tests audio du front couvrent la présence, l’annulation pendant la demande de micro,
 le refus d’autorisation, l’ordre des candidats ICE, la coupure du micro et le nettoyage des connexions.
 Ils utilisent des doublures de Socket.IO et du navigateur.
 Les tests documents couvrent les frappes concurrentes, les retards réseau, les annulations, la reconnexion et le rendu Markdown.
+Les tests fichiers couvrent la distinction document texte / fichier binaire, le choix de l’aperçu et l’affichage des tailles.
 Les tests du back se lancent séparément dans son conteneur Docker.
 
 Pour vérifier un appel complet, ouvrir le même fichier dans deux sessions authentifiées,
