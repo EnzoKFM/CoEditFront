@@ -7,7 +7,6 @@ import { AdminUsersPage } from './pages/AdminUsersPage';
 import { LoginPage } from './pages/LoginPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { TwoFactorPage } from './pages/TwoFactorPage';
-import { AudioCallsPage } from './pages/AudioCallsPage';
 import { WorkspacePage } from './pages/WorkspacePage';
 
 const router = createBrowserRouter(createRoutesFromElements(
@@ -18,8 +17,8 @@ const router = createBrowserRouter(createRoutesFromElements(
                 <Route path="/" element={<WorkspacePage />} />
                 <Route path="/arborescence" element={<Navigate to="/" replace />} />
                 <Route path="/editor" element={<Navigate to="/" replace />} />
-                <Route path="/calls" element={<AudioCallsPage />} />
-                <Route path="/calls/:fileId" element={<AudioCallsPage />} />
+                <Route path="/calls" element={<Navigate to="/" replace />} />
+                <Route path="/calls/:fileId" element={<Navigate to="/" replace />} />
                 <Route path="/a2f" element={<TwoFactorPage />} />
                 <Route path="/profil" element={<ProfilePage />} />
                 <Route element={<RequireAdmin />}>

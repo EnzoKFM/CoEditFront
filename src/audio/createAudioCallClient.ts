@@ -1,4 +1,4 @@
-import { io } from 'socket.io-client'
+import { io, type Socket } from 'socket.io-client'
 import { AudioCallClient } from './AudioCallClient'
 
 function getIceServers(): RTCIceServer[] {
@@ -11,8 +11,8 @@ function getIceServers(): RTCIceServer[] {
     return servers
 }
 
-export function createAudioCallClient(fileId: number, userName: string) {
-    const socket = io(import.meta.env.VITE_API_URL ?? 'http://localhost:3000', {
+export function createAudioCallClient(fileId: number, userName: string, documentSocket?: Socket) {
+    const socket = documentSocket ?? io(import.meta.env.VITE_API_URL || window.location.origin, {
         autoConnect: false,
         withCredentials: true,
         reconnectionAttempts: 5,
@@ -26,5 +26,5 @@ export function createAudioCallClient(fileId: number, userName: string) {
             return navigator.mediaDevices.getUserMedia({ audio: true, video: false })
         },
         createPeer: () => new RTCPeerConnection({ iceServers: getIceServers() }),
-    })
+    }, !documentSocket)
 }

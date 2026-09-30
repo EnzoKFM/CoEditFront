@@ -22,9 +22,6 @@ export function AppLayout() {
             <NavLink to="/" end className={navLinkClass}>
               Accueil
             </NavLink>
-            <NavLink to="/calls" className={navLinkClass}>
-              Appels
-            </NavLink>
             {/* Le libellé suit l'état : "Activer" serait faux une fois l'A2F active */}
             <NavLink to="/a2f" className={navLinkClass}>
               {user?.totpEnabled ? "Gérer l'A2F" : "Activer l'A2F"}

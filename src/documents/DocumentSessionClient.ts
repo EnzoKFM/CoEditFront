@@ -1,8 +1,10 @@
 ﻿import type { Socket } from 'socket.io-client'
 import { invertOperation, operationFromChange } from './documentContent.ts'
+import type { Collaborator, DocumentSessionObserver } from './types'
 import { applyOperation, transformOperation, type TextOperation } from './textOperation.ts'
 
 interface JoinReply {
+    collaborators?: Collaborator[]
     content: string
     revision: number
     error?: string
@@ -31,6 +33,7 @@ export class DocumentSessionClient {
     private socket: Socket
     private fileId: number
     private userName: string
+    private observer?: DocumentSessionObserver
     private listeners = new Set<() => void>()
     private remoteListeners = new Set<(operation: TextOperation) => void>()
     private generation = 0
@@ -49,10 +52,11 @@ export class DocumentSessionClient {
         status: 'loading', content: null, dirty: false, message: '', canUndo: false, canRedo: false,
     }
 
-    constructor(socket: Socket, fileId: number, userName: string) {
+    constructor(socket: Socket, fileId: number, userName: string, observer?: DocumentSessionObserver) {
         this.socket = socket
         this.fileId = fileId
         this.userName = userName
+        this.observer = observer
     }
 
     getSnapshot = () => this.state
@@ -100,15 +104,18 @@ export class DocumentSessionClient {
 
     private join = () => {
         const generation = ++this.generation
+        this.observer?.joining()
         this.update({ status: 'loading' })
         this.socket.timeout(10000).emit('document:join', { fileId: this.fileId, user: { name: this.userName } }, (failure: Error | null, reply?: JoinReply) => {
             if (this.disposed || generation !== this.generation || !this.socket.connected) return
             if (failure || reply?.error || typeof reply?.content !== 'string' || !Number.isInteger(reply.revision)) {
+                this.observer?.failed(reply?.error || 'Impossible de rejoindre le document.')
                 this.update({ status: 'error', message: reply?.error || 'Impossible de charger le document.' })
                 return
             }
             this.serverContent = reply.content
             this.revision = reply.revision
+            this.observer?.joined(reply.collaborators ?? [])
             if (this.state.dirty && !this.discardOnJoin && this.state.content !== reply.content) {
                 this.update({ status: 'recovery', message: 'La connexion a été interrompue avant confirmation de toutes les modifications. Copiez ou téléchargez votre texte, puis rechargez la version du serveur. Il n’est pas renvoyé automatiquement pour éviter les doublons.' })
                 return
@@ -254,7 +261,10 @@ export class DocumentSessionClient {
         this.generation += 1
         this.deferredEvents = []
         if (this.socket.connected) this.socket.emit('document:leave')
-        this.socket.removeAllListeners()
+        this.socket.off('connect', this.join)
+        this.socket.off('disconnect', this.disconnect)
+        this.socket.off('connect_error', this.connectionError)
+        this.socket.off('document:operation', this.receiveOperation)
         this.socket.disconnect()
     }
 }

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { AudioCallClient } from '../src/audio/AudioCallClient.ts'
+import { DocumentSessionClient } from '../src/documents/DocumentSessionClient.ts'
 
 class FakeSocket {
     id = 'local'
@@ -13,8 +14,12 @@ class FakeSocket {
         'call:accept': { callId: 'call-1' },
     }
 
-    on(event, handler) { this.handlers.set(event, handler) }
-    receive(event, payload) { this.handlers.get(event)?.(payload) }
+    on(event, handler) {
+        if (!this.handlers.has(event)) this.handlers.set(event, new Set())
+        this.handlers.get(event).add(handler)
+    }
+    off(event, handler) { this.handlers.get(event)?.delete(handler) }
+    receive(event, payload) { this.handlers.get(event)?.forEach(handler => handler(payload)) }
     timeout() { return this }
     emit(event, payload, acknowledge) {
         this.sent.push({ event, payload })
@@ -153,4 +158,90 @@ test('supporte un montage, nettoyage et remontage React StrictMode', (context) =
     client.connect()
     socket.receive('call:incoming', { callId: 'call-2', caller: participant })
     assert.equal(client.getSnapshot().status, 'incoming')
+})
+
+function setupSharedSession() {
+    const socket = new FakeSocket()
+    socket.replies['document:join'] = { content: 'Bonjour', revision: 0, collaborators: [participant] }
+    socket.replies['document:operation'] = { revision: 1 }
+    const track = { enabled: true, stopped: false, stop() { this.stopped = true } }
+    const stream = { getTracks: () => [track], getAudioTracks: () => [track] }
+    const peer = new FakePeer()
+    const audio = new AudioCallClient(socket, 12, 'Alice', {
+        acquireMicrophone: async () => stream,
+        createPeer: () => peer,
+    }, false)
+    const document = new DocumentSessionClient(socket, 12, 'Alice', {
+        joining: audio.joiningDocument,
+        joined: audio.joinedDocument,
+        failed: audio.documentFailed,
+    })
+    audio.connect()
+    document.connect()
+    return { socket, audio, document, track, peer, dispose() { audio.dispose(); document.dispose() } }
+}
+
+test('éditeur et audio rejoignent le document une seule fois et partagent sa présence', (context) => {
+    const session = setupSharedSession()
+    context.after(session.dispose)
+    assert.equal(session.socket.sent.filter(message => message.event === 'document:join').length, 1)
+    assert.equal(session.document.getSnapshot().content, 'Bonjour')
+    assert.deepEqual(session.audio.getSnapshot().collaborators, [participant])
+    assert.equal(session.audio.getSnapshot().connection, 'ready')
+})
+
+test('détruire le panneau audio arrête le micro sans déconnecter ni désabonner l’éditeur', async (context) => {
+    const session = setupSharedSession()
+    context.after(session.dispose)
+    await session.audio.start(participant)
+    session.audio.dispose()
+    assert.equal(session.track.stopped, true)
+    assert.equal(session.peer.closed, true)
+    assert.equal(session.socket.connected, true)
+    assert.equal(session.socket.sent.some(message => message.event === 'document:leave'), false)
+    session.document.change('Bonjour !')
+    assert.equal(session.document.getSnapshot().dirty, false)
+    session.socket.receive('document:operation', { revision: 2, operation: [{ insert: 'Salut ' }, { retain: 9 }] })
+    assert.equal(session.document.getSnapshot().content, 'Salut Bonjour !')
+})
+
+test('une reconnexion rejoint une seule fois le fichier et réinitialise la présence audio', async (context) => {
+    const session = setupSharedSession()
+    context.after(session.dispose)
+    await session.audio.start(participant)
+    session.socket.connected = false
+    session.socket.receive('disconnect')
+    assert.equal(session.document.getSnapshot().status, 'offline')
+    assert.equal(session.track.stopped, true)
+    assert.deepEqual(session.audio.getSnapshot().collaborators, [])
+    session.socket.replies['document:join'].collaborators = []
+    session.socket.connect()
+    assert.equal(session.socket.sent.filter(message => message.event === 'document:join').length, 2)
+    assert.equal(session.document.getSnapshot().status, 'ready')
+    assert.equal(session.audio.getSnapshot().connection, 'ready')
+    assert.equal(session.audio.getSnapshot().status, 'idle')
+})
+
+test('un refus du document ne rend pas le panneau audio disponible', (context) => {
+    const session = setupSharedSession()
+    context.after(session.dispose)
+    session.socket.replies['document:join'] = { error: 'Fichier introuvable' }
+    session.document.retry()
+    assert.equal(session.document.getSnapshot().status, 'error')
+    assert.equal(session.audio.getSnapshot().connection, 'error')
+    assert.deepEqual(session.audio.getSnapshot().collaborators, [])
+})
+
+test('le remontage StrictMode conserve les abonnés et ne duplique pas les invitations', (context) => {
+    const session = setupSharedSession()
+    context.after(session.dispose)
+    let changes = 0
+    session.audio.subscribe(() => { changes += 1 })
+    session.dispose()
+    session.audio.connect()
+    session.document.connect()
+    const changesBeforeInvite = changes
+    session.socket.receive('call:incoming', { callId: 'call-2', caller: participant })
+    assert.equal(changes, changesBeforeInvite + 1)
+    assert.equal(session.audio.getSnapshot().status, 'incoming')
 })

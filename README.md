@@ -54,10 +54,9 @@ La connexion utilise le cookie de session du back. Les comptes sont créés par 
 ## Pages
 
 - `/login` : connexion.
-- `/` : documents et éditeur dans le même espace de travail.
+- `/` : documents, éditeur et appels dans le même espace de travail.
 - `/arborescence` et `/editor` : redirection vers l’accueil.
-- `/calls` : choix du document pour un appel audio.
-- `/calls/:fileId` : salon audio du document.
+- `/calls` et `/calls/:fileId` : redirection vers l’accueil.
 - `/profil`, `/a2f` : profil et double authentification.
 - `/admin/utilisateurs` : gestion des comptes, réservée aux administrateurs.
 
@@ -99,17 +98,26 @@ Les nouveaux documents ne contiennent que le Markdown brut.
 
 ## Appels audio
 
-Dans « Appels », choisir un document puis rejoindre son salon. Les autres personnes
-présentes apparaissent dans la liste. Cliquer sur « Appeler », puis accepter sur l’autre navigateur.
+Ouvrir un fichier sur l’accueil. Le panneau « Sur ce document » affiche les autres personnes
+connectées à ce fichier. Cliquer sur « Appeler », puis accepter sur l’autre navigateur.
+L’édition reste disponible pendant l’appel. Sur petit écran, un message signale un appel
+entrant lorsque le panneau est hors de vue.
+
 Le micro est demandé uniquement au démarrage ou à l’acceptation de l’appel.
+Changer de fichier, quitter la page ou se déconnecter demande confirmation pendant un appel.
+La sortie confirmée arrête le micro et termine l’appel du correspondant.
+Raccrocher conserve la connexion au document et permet de continuer à écrire.
 
-Le son passe par WebRTC. Socket.IO utilise le cookie de connexion et les événements du back :
-`document:join`, `presence:update`, `presence:leave`, `call:invite`, `call:incoming`,
-`call:accept`, `call:accepted`, `call:signal`, `call:hangup` et `call:ended`.
-Quitter la page, se déconnecter ou perdre la connexion au serveur termine l’appel et arrête le micro.
-Après reconnexion, le salon est rejoint à nouveau ; l’appel doit être relancé.
+L’éditeur et l’audio partagent une seule connexion Socket.IO et un seul `document:join`.
+`createWorkspaceSession` gère leur ouverture et leur fermeture. `DocumentSessionClient`
+transmet la présence initiale à `AudioCallClient`, qui reçoit ensuite `presence:update`
+et `presence:leave` sur la même connexion.
 
-Le salon est associé au document, mais ne modifie pas son contenu.
+Le son passe par WebRTC ; les événements `call:invite`, `call:incoming`, `call:accept`,
+`call:accepted`, `call:signal`, `call:hangup` et `call:ended` utilisent le protocole existant.
+Aucun changement du back ni nouvelle dépendance n’est nécessaire.
+Une coupure termine l’appel et arrête le micro. La reconnexion rétablit le document et sa
+liste de participants ; l’appel doit être relancé.
 
 ### Réseau et microphone
 
@@ -126,7 +134,7 @@ limités dans le temps, jamais un secret d’administration. Aucun serveur TURN 
 Redémarrer Vite après un changement de `.env`.
 
 Si le navigateur bloque la lecture automatique, un bouton « Activer le son » apparaît.
-Les erreurs de micro, les appels refusés, les délais dépassés et les coupures sont affichés dans le salon.
+Les erreurs de micro, les appels refusés, les délais dépassés et les coupures sont affichés dans le panneau du document.
 
 ## Vérifications
 
@@ -143,8 +151,8 @@ Ils utilisent des doublures de Socket.IO et du navigateur.
 Les tests documents couvrent les frappes concurrentes, les retards réseau, les annulations, la reconnexion et le rendu Markdown.
 Les tests du back se lancent séparément dans son conteneur Docker.
 
-Pour vérifier un appel complet, ouvrir deux sessions authentifiées, rejoindre le même salon,
+Pour vérifier un appel complet, ouvrir le même fichier dans deux sessions authentifiées,
 appeler puis accepter. Tester le son dans les deux sens, le bouton micro, le raccrochage,
-le refus et la sortie de la page. Utiliser un casque pour éviter l’écho.
+le refus, le changement de fichier et la sortie de la page. Vérifier que l’édition fonctionne pendant l’appel et après le raccrochage. Utiliser un casque pour éviter l’écho.
 
 `/audio-call.html` conserve la démo visuelle des appels simulés. Elle n’est pas incluse dans le build principal.

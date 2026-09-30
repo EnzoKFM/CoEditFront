@@ -71,9 +71,9 @@ export function DocumentEditor({ content, onChange, editable = true, canUndo, ca
     }
 
     return (
-        <section aria-label="Éditeur Markdown" className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section aria-label="Éditeur Markdown" className="@container overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <EditorToolbar disabled={!editable} canUndo={canUndo} canRedo={canRedo} onUndo={onUndo} onRedo={onRedo} onInsert={insertMarkdown} showPreview={showPreview} onTogglePreview={() => setShowPreview(!showPreview)} />
-            <div className={showPreview ? 'grid xl:grid-cols-2' : ''}>
+            <div className={showPreview ? 'grid @2xl:grid-cols-2' : ''}>
                 <div className="min-w-0">
                     <label htmlFor="document-markdown" className="block border-b border-slate-100 px-5 py-2 text-xs font-medium text-slate-500">
                         Texte Markdown
@@ -98,7 +98,7 @@ export function DocumentEditor({ content, onChange, editable = true, canUndo, ca
                     />
                 </div>
                 {showPreview && (
-                    <section aria-label="Aperçu Markdown" className="min-w-0 border-t border-slate-200 xl:border-l xl:border-t-0">
+                    <section aria-label="Aperçu Markdown" className="min-w-0 border-t border-slate-200 @2xl:border-l @2xl:border-t-0">
                         <h2 className="border-b border-slate-100 px-5 py-2 text-xs font-medium text-slate-500">
                             Aperçu
                         </h2>

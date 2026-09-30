@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useBlocker, useOutletContext } from 'react-router-dom'
-import { io } from 'socket.io-client'
+import { AudioCallRoom } from '../components/call/AudioCallRoom'
 import Arborescence, { type DocumentNode } from '../Arborescence'
 import { useAuth } from '../auth/authContext'
 import { DocumentEditor } from '../components/editor'
 import { Button } from '../components/shared/Button'
 import { UnsavedChangesDialog } from '../components/shared/UnsavedChangesDialog'
-import { DocumentSessionClient } from '../documents/DocumentSessionClient'
+import { createWorkspaceSession, type WorkspaceSession } from '../documents/createWorkspaceSession'
 import type { WorkspaceOutletContext } from '../documents/leaveGuard'
 
 interface SelectedFile {
@@ -19,42 +19,54 @@ export function WorkspacePage() {
     const { user } = useAuth()
     const userName = `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim()
     const fileId = selected?.node.id
-    const client = useMemo(() => fileId ? new DocumentSessionClient(
-        io(import.meta.env.VITE_API_URL || window.location.origin, { autoConnect: false, withCredentials: true }),
-        fileId,
-        userName,
-    ) : null, [fileId, userName])
+    const session = useMemo(() => fileId ? createWorkspaceSession(fileId, userName) : null, [fileId, userName])
 
     return (
-        <Workspace selected={selected} client={client} onSelect={setSelected} />
+        <Workspace selected={selected} session={session} onSelect={setSelected} />
     )
 }
 
 interface WorkspaceProps {
     selected: SelectedFile | null
-    client: DocumentSessionClient | null
+    session: WorkspaceSession | null
     onSelect: (file: SelectedFile | null) => void
 }
+
+const isCallActive = (status?: string) => ['incoming', 'outgoing', 'connecting', 'connected'].includes(status ?? '')
 
 const emptySubscribe = () => () => {}
 const emptySnapshot = () => null
 
-function Workspace({ selected, client, onSelect }: WorkspaceProps) {
+function Workspace({ selected, session, onSelect }: WorkspaceProps) {
+    const client = session?.document
+    const audioClient = session?.audio
+    const audioState = useSyncExternalStore(audioClient?.subscribe ?? emptySubscribe, audioClient?.getSnapshot ?? emptySnapshot)
+    const callActive = isCallActive(audioState?.status)
+    const audioPanel = useRef<HTMLDivElement>(null)
+    const [audioPanelVisible, setAudioPanelVisible] = useState(false)
     const state = useSyncExternalStore(client?.subscribe ?? emptySubscribe, client?.getSnapshot ?? emptySnapshot)
     const [pendingAction, setPendingAction] = useState<(() => void) | null>(null)
     const { registerLeaveGuard } = useOutletContext<WorkspaceOutletContext>()
     const [waiting, setWaiting] = useState(false)
-    const blocker = useBlocker(Boolean(state?.dirty))
-    const canWait = state?.status === 'ready'
+    const blocker = useBlocker(Boolean(state?.dirty || callActive))
+    const canWait = !state?.dirty || state.status === 'ready'
 
     useEffect(() => {
-        client?.connect()
-        return () => client?.dispose()
-    }, [client])
+        session?.connect()
+        return () => session?.dispose()
+    }, [session])
 
     useEffect(() => {
-        const hasChanges = () => Boolean(client?.getSnapshot().dirty)
-        registerLeaveGuard(() => !hasChanges() || window.confirm('Quitter alors que certaines modifications ne sont pas encore confirmées par le serveur ?'))
+        const panel = audioPanel.current
+        if (!panel) return
+        const observer = new IntersectionObserver(([entry]) => setAudioPanelVisible(entry.isIntersecting))
+        observer.observe(panel)
+        return () => observer.disconnect()
+    }, [audioClient])
+
+    useEffect(() => {
+        const hasChanges = () => Boolean(client?.getSnapshot().dirty || isCallActive(audioClient?.getSnapshot().status))
+        registerLeaveGuard(() => !hasChanges() || window.confirm(isCallActive(audioClient?.getSnapshot().status) ? 'Quitter terminera votre appel. Certaines modifications peuvent encore être en cours de transmission. Continuer ?' : 'Quitter alors que certaines modifications ne sont pas encore confirmées par le serveur ?'))
         const beforeUnload = (event: BeforeUnloadEvent) => {
             if (hasChanges()) { event.preventDefault(); event.returnValue = '' }
         }
@@ -63,7 +75,7 @@ function Workspace({ selected, client, onSelect }: WorkspaceProps) {
             registerLeaveGuard(null)
             window.removeEventListener('beforeunload', beforeUnload)
         }
-    }, [client, registerLeaveGuard])
+    }, [client, audioClient, registerLeaveGuard])
 
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
@@ -77,7 +89,7 @@ function Workspace({ selected, client, onSelect }: WorkspaceProps) {
     }, [client])
 
     function requestAction(action: () => void) {
-        if (state?.dirty) setPendingAction(() => action)
+        if (state?.dirty || callActive) setPendingAction(() => action)
         else action()
     }
 
@@ -103,7 +115,7 @@ function Workspace({ selected, client, onSelect }: WorkspaceProps) {
     }
 
     return (
-        <div className="grid items-start gap-6 lg:grid-cols-[21rem_minmax(0,1fr)]">
+        <div className="grid items-start gap-6 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[18rem_minmax(0,1fr)_18rem]">
             <aside aria-label="Vos documents" className="rounded-xl border border-slate-200 bg-white p-4 lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto">
                 <Arborescence
                     selectedFileId={selected?.node.id}
@@ -122,8 +134,8 @@ function Workspace({ selected, client, onSelect }: WorkspaceProps) {
                         }
                     }}
                     canDeleteNode={(nodeId) => {
-                        if (affectsSelection(nodeId) && state?.dirty) {
-                            window.alert('Attendez la synchronisation du document avant de le supprimer ou de supprimer son dossier.')
+                        if (affectsSelection(nodeId) && (state?.dirty || callActive)) {
+                            window.alert('Terminez votre appel et attendez la synchronisation avant de supprimer le document ou son dossier.')
                             return false
                         }
                         return true
@@ -198,8 +210,27 @@ function Workspace({ selected, client, onSelect }: WorkspaceProps) {
                     </>
                 )}
             </section>
+            {selected && audioClient && client && (
+                <aside aria-label="Participants et appels" className="min-w-0 lg:col-start-2 xl:col-start-3 xl:row-start-1">
+                    <div ref={audioPanel} tabIndex={-1} className="rounded-xl focus-visible:outline-2 focus-visible:outline-indigo-600">
+                        <AudioCallRoom client={audioClient} documentName={selected.node.name} onRetry={client.retry} />
+                    </div>
+                </aside>
+            )}
+            {audioState?.status === 'incoming' && !audioPanelVisible && (
+                <div role="alert" className="fixed inset-x-4 bottom-4 z-40 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-white p-4 shadow-lg xl:hidden">
+                    <p className="text-sm font-medium text-slate-900">
+                        Appel entrant de {audioState.participant?.user.name}
+                    </p>
+                    <Button variant="primary" onClick={() => { audioPanel.current?.scrollIntoView({ behavior: 'smooth' }); audioPanel.current?.focus({ preventScroll: true }) }}>
+                        Voir l’appel
+                    </Button>
+                </div>
+            )}
             {(pendingAction || blocker.state === 'blocked') && (
                 <UnsavedChangesDialog
+                    callActive={callActive}
+                    hasPendingChanges={Boolean(state?.dirty)}
                     waiting={waiting}
                     canWait={canWait}
                     message={state?.message}

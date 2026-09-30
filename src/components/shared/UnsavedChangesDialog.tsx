@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react'
 import { Button } from './Button'
 
 interface UnsavedChangesDialogProps {
+    callActive?: boolean
+    hasPendingChanges?: boolean
     waiting: boolean
     canWait: boolean
     message?: string
@@ -10,7 +12,7 @@ interface UnsavedChangesDialogProps {
     onCancel: () => void
 }
 
-export function UnsavedChangesDialog({ waiting, canWait, message, onWait, onDiscard, onCancel }: UnsavedChangesDialogProps) {
+export function UnsavedChangesDialog({ callActive = false, hasPendingChanges = true, waiting, canWait, message, onWait, onDiscard, onCancel }: UnsavedChangesDialogProps) {
     const dialog = useRef<HTMLDialogElement>(null)
 
     useEffect(() => {
@@ -20,11 +22,16 @@ export function UnsavedChangesDialog({ waiting, canWait, message, onWait, onDisc
     return (
         <dialog ref={dialog} aria-labelledby="unsaved-title" onCancel={(event) => { event.preventDefault(); if (!waiting) onCancel() }} className="m-auto max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-xl backdrop:bg-slate-900/40">
             <h2 id="unsaved-title" className="text-lg font-semibold text-slate-900">
-                Modifications en cours d’envoi
+                {callActive ? 'Quitter le document ?' : 'Modifications en cours d’envoi'}
             </h2>
-            <p className="mt-3 text-sm text-slate-600">
+            {callActive && (
+                <p className="mt-3 text-sm text-slate-600">
+                    Quitter ce document terminera votre appel et coupera votre microphone.
+                </p>
+            )}
+            {hasPendingChanges && <p className="mt-3 text-sm text-slate-600">
                 Certaines modifications ne sont pas encore confirmées par le serveur. Attendez leur transmission avant de quitter.
-            </p>
+            </p>}
             {message && (
                 <p role="status" className="mt-3 text-sm text-amber-800">
                     {message}
@@ -34,11 +41,11 @@ export function UnsavedChangesDialog({ waiting, canWait, message, onWait, onDisc
                 <Button onClick={onCancel} disabled={waiting}>
                     Rester
                 </Button>
-                <Button variant="danger" onClick={onDiscard} disabled={waiting}>
+                {hasPendingChanges && <Button variant="danger" onClick={onDiscard} disabled={waiting}>
                     Quitter quand même
-                </Button>
+                </Button>}
                 <Button variant="primary" onClick={onWait} disabled={!canWait || waiting}>
-                    {waiting ? 'Transmission…' : 'Attendre et continuer'}
+                    {waiting ? 'Transmission…' : callActive ? 'Continuer et raccrocher' : 'Attendre et continuer'}
                 </Button>
             </div>
         </dialog>
