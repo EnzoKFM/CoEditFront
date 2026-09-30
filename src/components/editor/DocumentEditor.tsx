@@ -23,10 +23,12 @@ export interface DocumentEditorProps {
 
 interface CursorPosition { top: number; left: number }
 
-function getCollaboratorColor(collaborator: Collaborator, index: number) {
+function getCollaboratorColor(collaborator: Collaborator) {
     if (collaborator.user.color) return collaborator.user.color
     const colors = ['#ef4444', '#3b82f6', '#22c55e', '#a855f7', '#f97316', '#06b6d4', '#ec4899', '#84cc16']
-    return colors[index % colors.length]
+    let hash = 0
+    for (const char of collaborator.clientId) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+    return colors[hash % colors.length]
 }
 
 function getCaretPosition(textarea: HTMLTextAreaElement, content: string, index: number): CursorPosition {
@@ -137,12 +139,12 @@ export function DocumentEditor({ content, onChange, editable = true, canUndo, ca
                         onClick={sendPresence}
                         onKeyUp={sendPresence}
                     />
-                    {collaborators.map((collaborator, index) => {
-                        if (!collaborator.selection || !textareaElement) return null
-                        const position = getCaretPosition(textareaElement, content, collaborator.selection.head)
-                        const color = getCollaboratorColor(collaborator, index)
+                    {collaborators.map((collaborator) => {
+                        if (!collaborator.selection) return null
+                        const position = getCaretPosition(textarea.current!, content, collaborator.selection.head)
+                        const color = getCollaboratorColor(collaborator)
                         return (
-                            <div key={collaborator.clientId} className="pointer-events-none absolute z-10" style={{ left: position.left + 20, top: position.top + 32, color }}>
+                            <div key={collaborator.clientId} className="pointer-events-none absolute z-10" style={{ left: position.left, top: position.top + 32, color }}>
                                 <div className="h-5 w-0.5" style={{ backgroundColor: color }} />
                                 <span className="absolute left-1 top-0 whitespace-nowrap rounded px-1 text-[10px] font-medium text-white" style={{ backgroundColor: color }}>
                                     {collaborator.user.name}
