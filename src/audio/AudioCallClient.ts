@@ -37,7 +37,7 @@ interface CallResources {
 }
 
 export class AudioCallClient {
-    private socket: Socket
+    readonly socket: Socket
     private resources: CallResources
     private fileId: number
     private userName: string
