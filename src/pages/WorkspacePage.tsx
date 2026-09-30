@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useBlocker, useOutletContext } from 'react-router-dom'
+import { BinaryFileViewer } from '../components/binary/BinaryFileViewer'
 import { AudioCallRoom } from '../components/call/AudioCallRoom'
 import Arborescence, { type DocumentNode } from '../Arborescence'
 import { useAuth } from '../auth/authContext'
 import { DocumentEditor } from '../components/editor'
 import { Button } from '../components/shared/Button'
 import { UnsavedChangesDialog } from '../components/shared/UnsavedChangesDialog'
+import { isBinaryFile } from '../documents/binaryFileKind'
 import { createWorkspaceSession, type WorkspaceSession } from '../documents/createWorkspaceSession'
 import type { WorkspaceOutletContext } from '../documents/leaveGuard'
 
@@ -19,7 +21,8 @@ export function WorkspacePage() {
     const { user } = useAuth()
     const userName = `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim()
     const fileId = selected?.node.id
-    const session = useMemo(() => fileId ? createWorkspaceSession(fileId, userName) : null, [fileId, userName])
+    const isBinarySelected = isBinaryFile(selected?.node.mimeType)
+    const session = useMemo(() => fileId && !isBinarySelected ? createWorkspaceSession(fileId, userName) : null, [fileId, isBinarySelected, userName])
 
     return (
         <Workspace selected={selected} session={session} onSelect={setSelected} />
@@ -46,6 +49,7 @@ function Workspace({ selected, session, onSelect }: WorkspaceProps) {
     const [audioPanelVisible, setAudioPanelVisible] = useState(false)
     const state = useSyncExternalStore(client?.subscribe ?? emptySubscribe, client?.getSnapshot ?? emptySnapshot)
     const [pendingAction, setPendingAction] = useState<(() => void) | null>(null)
+    const [replacedFile, setReplacedFile] = useState<DocumentNode | null>(null)
     const { registerLeaveGuard } = useOutletContext<WorkspaceOutletContext>()
     const [waiting, setWaiting] = useState(false)
     const blocker = useBlocker(Boolean(state?.dirty || callActive))
@@ -119,6 +123,7 @@ function Workspace({ selected, session, onSelect }: WorkspaceProps) {
             <aside aria-label="Vos documents" className="rounded-xl border border-slate-200 bg-white p-4 lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto">
                 <Arborescence
                     selectedFileId={selected?.node.id}
+                    replacedFile={replacedFile}
                     onFileSelect={(node, ancestorIds) => {
                         if (node.id !== selected?.node.id) requestAction(() => onSelect({ node, ancestorIds }))
                     }}
@@ -152,9 +157,19 @@ function Workspace({ selected, session, onSelect }: WorkspaceProps) {
                             Votre espace de travail
                         </h1>
                         <p className="mt-3 max-w-md text-sm text-slate-500">
-                            Choisissez un fichier dans vos documents pour l’ouvrir ici, ou créez-en un pour commencer à écrire.
+                            Choisissez un fichier dans vos documents pour l’ouvrir ici, créez-en un pour commencer à écrire, ou importez un PDF, une image ou tout autre fichier.
                         </p>
                     </div>
+                )}
+                {selected && isBinaryFile(selected.node.mimeType) && (
+                    <BinaryFileViewer
+                        key={selected.node.id}
+                        file={selected.node}
+                        onReplaced={(node) => {
+                            onSelect({ ...selected, node })
+                            setReplacedFile(node)
+                        }}
+                    />
                 )}
                 {selected && state && (
                     <>

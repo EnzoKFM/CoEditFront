@@ -31,7 +31,7 @@ export function setUnauthorizedListener(listener: (() => void) | null) {
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
-  if (options.body && !headers.has('Content-Type')) {
+  if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -54,4 +54,22 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     throw new ApiError(response.status, data?.error ?? 'Une erreur inattendue est survenue');
   }
   return data as T;
+}
+
+export async function apiFetchBlob(path: string): Promise<Blob> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, { credentials: 'include' });
+  } catch {
+    throw new ApiError(0, 'Impossible de joindre le serveur');
+  }
+
+  if (response.status === 401) {
+    unauthorizedListener?.();
+  }
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null);
+    throw new ApiError(response.status, errorBody?.error ?? 'Une erreur inattendue est survenue');
+  }
+  return response.blob();
 }
