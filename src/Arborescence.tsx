@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "./lib/api";
+import { ShareFolderDialog } from "./components/share/ShareFolderDialog";
+import { listSharedFolders, sharePermissionLabels, type SharedFolder } from "./shares/shareApi";
 
 export type DocumentNode = {
     id: number;
@@ -15,6 +17,7 @@ type FolderResponse = {
         id: number;
         name: string;
         parentId: number | null;
+        permission: "owner" | "read" | "write" | "delete";
     } | null;
     breadcrumb: {
         id: number;
@@ -35,17 +38,19 @@ interface ArborescenceProps {
 function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDeleted, onNodeMoved, canDeleteNode }: ArborescenceProps) {
     const [folders, setFolders] = useState<DocumentNode[]>([]);
     const [currentFolder, setCurrentFolder] = useState<number | null>(null);
-    const [currentFolderData, setCurrentFolderData] = useState<{
-        id: number;
-        name: string;
-        parentId: number | null;
-    } | null>(null);
+    const [currentFolderData, setCurrentFolderData] = useState<FolderResponse["folder"]>(null);
     const [moveNodeId, setMoveNodeId] = useState<number | null>(null);
     const [moveNodeName, setMoveNodeName] = useState("");
     const [moveFolders, setMoveFolders] = useState<(DocumentNode & { depth: number })[]>([]);
     const [showMoveModal, setShowMoveModal] = useState(false);
     const [breadcrumb, setBreadcrumb] = useState< { id: number; name: string }[] >([]);
     const [selectedMoveFolder, setSelectedMoveFolder] = useState<number | null>(null);
+    const [sharedFolders, setSharedFolders] = useState<SharedFolder[]>([]);
+    const [folderToShare, setFolderToShare] = useState<DocumentNode | null>(null);
+    const currentPermission = currentFolder === null ? "owner" : currentFolderData?.permission ?? "read";
+    const canShareFolders = currentPermission === "owner";
+    const canWrite = currentPermission !== "read";
+    const canMoveOrDelete = currentPermission === "owner" || currentPermission === "delete";
 
     useEffect(() => {
         apiFetch<FolderResponse>("/api/folders/root/children")
@@ -57,7 +62,17 @@ function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDelet
                 console.error(error);
                 alert("Impossible de charger l'arborescence.");
             });
+        loadSharedFolders();
     }, []);
+
+    function loadSharedFolders() {
+        listSharedFolders()
+            .then(setSharedFolders)
+            .catch((error) => {
+                console.error(error);
+                alert("Impossible de charger les dossiers partagés.");
+            });
+    }
 
 
     function openFolder(folderId: number) {
@@ -312,6 +327,7 @@ function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDelet
                 console.error(error);
                 alert("Impossible de revenir à la racine.");
             });
+        loadSharedFolders();
     }
 
     return (
@@ -323,21 +339,23 @@ function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDelet
                     </h2>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                    <button
-                       className="border-0 rounded-md px-3.5 py-2.5 bg-blue-600 text-white text-sm cursor-pointer hover:bg-blue-700"
-                        onClick={createFolder}
-                    >
-                        ➕ Nouveau dossier
-                    </button>
+                {canWrite && (
+                    <div className="flex flex-wrap gap-2">
+                        <button
+                           className="border-0 rounded-md px-3.5 py-2.5 bg-blue-600 text-white text-sm cursor-pointer hover:bg-blue-700"
+                            onClick={createFolder}
+                        >
+                            ➕ Nouveau dossier
+                        </button>
 
-                    <button
-                        className="border-0 rounded-md px-3.5 py-2.5 bg-blue-600 text-white text-sm cursor-pointer hover:bg-blue-700"
-                        onClick={createFile}
-                    >
-                        📄 Nouveau fichier
-                    </button>
-                </div>
+                        <button
+                            className="border-0 rounded-md px-3.5 py-2.5 bg-blue-600 text-white text-sm cursor-pointer hover:bg-blue-700"
+                            onClick={createFile}
+                        >
+                            📄 Nouveau fichier
+                        </button>
+                    </div>
+                )}
             </div>
 
             <div className="mb-4 flex flex-wrap items-center gap-1.5 text-sm">
@@ -399,42 +417,102 @@ function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDelet
                         </button>
 
                         <div className="flex items-center gap-1.5">
-                            <button
-                                className="border-0 bg-transparent p-1 rounded cursor-pointer text-base hover:bg-gray-200"
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    renameNode(folder.id, folder.name);
-                                }}
-                                title="Renommer"
-                            >
-                                ✏️
-                            </button>
+                            {folder.type === "folder" && canShareFolders && (
+                                <button
+                                    className="border-0 bg-transparent p-1 rounded cursor-pointer text-base hover:bg-gray-200"
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        setFolderToShare(folder);
+                                    }}
+                                    title="Partager"
+                                >
+                                    👥
+                                </button>
+                            )}
 
-                            <button
-                                className="border-0 bg-transparent p-1 rounded cursor-pointer text-base hover:bg-gray-200"
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    moveNode(folder.id, folder.name);
-                                }}
-                                title="Déplacer"
-                            >
-                                📦
-                            </button>
+                            {canWrite && (
+                                <button
+                                    className="border-0 bg-transparent p-1 rounded cursor-pointer text-base hover:bg-gray-200"
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        renameNode(folder.id, folder.name);
+                                    }}
+                                    title="Renommer"
+                                >
+                                    ✏️
+                                </button>
+                            )}
 
-                            <button
-                                className="border-0 bg-transparent p-1 rounded cursor-pointer text-base hover:bg-gray-200"
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    deleteNode(folder.id, folder.name);
-                                }}
-                                title="Supprimer"
-                            >
-                                🗑️
-                            </button>
+                            {canMoveOrDelete && (
+                                <>
+                                    <button
+                                        className="border-0 bg-transparent p-1 rounded cursor-pointer text-base hover:bg-gray-200"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            moveNode(folder.id, folder.name);
+                                        }}
+                                        title="Déplacer"
+                                    >
+                                        📦
+                                    </button>
+
+                                    <button
+                                        className="border-0 bg-transparent p-1 rounded cursor-pointer text-base hover:bg-gray-200"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            deleteNode(folder.id, folder.name);
+                                        }}
+                                        title="Supprimer"
+                                    >
+                                        🗑️
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </div>
                 ))}
             </div>
+
+            {currentFolder === null && sharedFolders.length > 0 && (
+                <div className="mt-6">
+                    <h3 className="mb-2 text-sm font-semibold text-slate-900">
+                        Partagés avec moi
+                    </h3>
+
+                    {sharedFolders.map((sharedFolder) => (
+                        <button
+                            key={sharedFolder.id}
+                            type="button"
+                            className="mb-2 flex w-full items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 text-left hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-indigo-600"
+                            aria-label={`Ouvrir le dossier partagé ${sharedFolder.name}`}
+                            onClick={() => openFolder(sharedFolder.id)}
+                        >
+                            <span aria-hidden="true" className="relative text-xl">
+                                📁
+                                <span className="absolute -bottom-1 -right-1.5 text-xs">👥</span>
+                            </span>
+
+                            <span className="min-w-0 flex-1">
+                                <span className="block break-words text-sm text-gray-700">
+                                    {sharedFolder.name}
+                                </span>
+                                <span className="block text-xs text-slate-500">
+                                    {sharedFolder.owner.email ? `Partagé par ${sharedFolder.owner.firstName} ${sharedFolder.owner.lastName}` : "Propriétaire supprimé"} · {sharePermissionLabels[sharedFolder.permission]}
+                                </span>
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {folderToShare && (
+                <ShareFolderDialog
+                    folderId={folderToShare.id}
+                    folderName={folderToShare.name}
+                    onClose={() => setFolderToShare(null)}
+                />
+            )}
+
             {showMoveModal && (
                 <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/45">
                     <div className="w-[500px] max-w-[90%] overflow-hidden rounded-xl bg-white shadow-2xl">
