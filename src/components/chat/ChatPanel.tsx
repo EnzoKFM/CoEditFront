@@ -1,19 +1,26 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { Socket } from 'socket.io-client'
 import { useAuth } from '../../auth/authContext'
-import { MAX_CHAT_MESSAGE_LENGTH, useDocumentChat } from '../../chat/useDocumentChat'
+import { MAX_CHAT_MESSAGE_LENGTH, useDocumentChat, type ChatMessage } from '../../chat/useDocumentChat'
 import { Button } from '../shared/Button'
 
 const timeFormatter = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' })
+const MESSAGE_GROUP_DELAY_MS = 5 * 60 * 1000
+
+function startsNewGroup(message: ChatMessage, previousMessage: ChatMessage | undefined) {
+    if (!previousMessage || previousMessage.author.userId !== message.author.userId) return true
+    return Date.parse(message.sentAt) - Date.parse(previousMessage.sentAt) > MESSAGE_GROUP_DELAY_MS
+}
 
 export function ChatPanel({ socket, isJoined }: { socket: Socket; isJoined: boolean }) {
     const { user } = useAuth()
     const { messages, error, isSending, sendMessage } = useDocumentChat(socket, isJoined)
     const [draft, setDraft] = useState('')
-    const listEndRef = useRef<HTMLLIElement>(null)
+    const listRef = useRef<HTMLUListElement>(null)
 
     useEffect(() => {
-        listEndRef.current?.scrollIntoView({ block: 'nearest' })
+        const list = listRef.current
+        if (list) list.scrollTop = list.scrollHeight
     }, [messages.length])
 
     async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -23,39 +30,46 @@ export function ChatPanel({ socket, isJoined }: { socket: Socket; isJoined: bool
     }
 
     return (
-        <section aria-labelledby="chat-title" className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 id="chat-title" className="text-lg font-semibold text-slate-900">
-                Messages
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-                Visibles par les personnes présentes sur ce document, effacés quand tout le monde est parti.
-            </p>
+        <section aria-labelledby="chat-title" className="flex min-h-0 flex-1 flex-col rounded-xl border border-slate-200 bg-white">
+            <header className="shrink-0 border-b border-slate-100 px-4 py-3">
+                <h2 id="chat-title" className="text-base font-semibold text-slate-900">
+                    Messages
+                </h2>
+                <p className="text-xs text-slate-500">
+                    Effacés quand tout le monde a quitté le document.
+                </p>
+            </header>
 
-            <ul aria-live="polite" aria-label="Messages du document" className="mt-4 max-h-80 space-y-3 overflow-y-auto">
+            <ul ref={listRef} aria-live="polite" aria-label="Messages du document" className="max-h-80 overflow-y-auto px-4 py-3 xl:max-h-none xl:min-h-0 xl:flex-1">
                 {messages.length === 0 && (
-                    <li className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
+                    <li className="rounded-lg bg-slate-50 p-4 text-center text-sm text-slate-500">
                         Aucun message pour le moment.
                     </li>
                 )}
-                {messages.map((message) => {
+                {messages.map((message, index) => {
                     const isMine = message.author.userId === user?.id
+                    const isGroupStart = startsNewGroup(message, messages[index - 1])
                     return (
-                        <li key={message.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${isMine ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-800'}`}>
-                                <p className={`text-xs ${isMine ? 'text-indigo-100' : 'text-slate-500'}`}>
-                                    {isMine ? 'Vous' : message.author.name} · <time dateTime={message.sentAt}>{timeFormatter.format(new Date(message.sentAt))}</time>
+                        <li key={message.id} className={`flex flex-col ${isMine ? 'items-end' : 'items-start'} ${isGroupStart ? 'mt-3 first:mt-0' : 'mt-1'}`}>
+                            {isGroupStart && (
+                                <p className="mb-1 text-xs text-slate-500">
+                                    <span className="font-medium text-slate-700">{isMine ? 'Vous' : message.author.name}</span>
+                                    {' · '}
+                                    <time dateTime={message.sentAt}>{timeFormatter.format(new Date(message.sentAt))}</time>
                                 </p>
-                                <p className="mt-1 whitespace-pre-wrap break-words">
-                                    {message.text}
-                                </p>
-                            </div>
+                            )}
+                            <p
+                                title={isGroupStart ? undefined : timeFormatter.format(new Date(message.sentAt))}
+                                className={`max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${isMine ? 'rounded-br-md bg-indigo-600 text-white' : 'rounded-bl-md bg-slate-100 text-slate-800'}`}
+                            >
+                                {message.text}
+                            </p>
                         </li>
                     )
                 })}
-                <li ref={listEndRef} aria-hidden="true" />
             </ul>
 
-            <form onSubmit={handleSubmit} className="mt-4 space-y-2">
+            <form onSubmit={handleSubmit} className="shrink-0 space-y-2 border-t border-slate-100 p-3">
                 <label htmlFor="chat-message" className="sr-only">
                     Votre message
                 </label>
@@ -65,7 +79,7 @@ export function ChatPanel({ socket, isJoined }: { socket: Socket; isJoined: bool
                         type="text"
                         autoComplete="off"
                         maxLength={MAX_CHAT_MESSAGE_LENGTH}
-                        placeholder={isJoined ? 'Écrire un message…' : 'Connexion au salon…'}
+                        placeholder={isJoined ? 'Écrire un message…' : 'Connexion au document…'}
                         disabled={!isJoined}
                         value={draft}
                         onChange={(event) => setDraft(event.target.value)}
