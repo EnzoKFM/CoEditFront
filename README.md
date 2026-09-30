@@ -65,26 +65,37 @@ Les pages métier nécessitent une session ouverte.
 
 ## Documents
 
-Sur l’accueil, ouvrir un fichier dans la liste pour afficher son contenu dans l’éditeur.
-« Nouveau fichier » crée puis ouvre un document. Le bouton « Enregistrer » et le raccourci
-Ctrl+S (Cmd+S sur Mac) sauvegardent le contenu et sa mise en forme.
+Sur l’accueil, ouvrir un fichier dans la liste ou utiliser « Nouveau fichier ».
+L’éditeur travaille directement sur une chaîne Markdown. L’aperçu affiche les titres,
+listes, liens et styles ; la barre d’outils insère leur syntaxe dans le texte.
+Le HTML saisi est affiché comme du texte dans l’aperçu.
 
-Les dossiers et fichiers utilisent les routes REST existantes. Le contenu passe par
-`document:join` puis `document:operation`, avec le cookie de session. Le back doit prendre
-en charge `expectedRevision` et `persist` ; « Enregistré » apparaît après confirmation
-de la sauvegarde en base. Aucune migration de base n’est nécessaire.
+Chaque modification produit une opération `retain` / `insert` / `delete`, envoyée par
+`document:operation`. Une seule opération attend son accusé à la fois ; les suivantes
+restent en attente et sont transformées avec les opérations reçues des autres personnes.
+`src/documents/textOperation.ts` reprend l’algorithme du back et sa priorité des insertions.
+Si ce protocole évolue, les deux implémentations doivent rester compatibles.
 
-Le texte brut existant reste lisible. Après sauvegarde, le contenu contient le JSON Tiptap
-précédé de `COEDIT_RICH_TEXT_V1\n`, pour conserver les titres, listes, liens et styles.
+Le serveur garde sa sauvegarde automatique : après 2 secondes sans modification, au plus tard
+après 10 secondes de frappe continue, et au départ du dernier éditeur.
+« À jour » signifie que toutes les opérations locales ont été acceptées par le serveur.
+Il n’y a plus de bouton de sauvegarde manuelle ni de dépendance aux options de l’ancienne PR backend.
+Le front fonctionne avec le protocole d’origine, sans migration de base.
 
-Un changement de fichier ou de page propose d’enregistrer, d’abandonner ou de rester.
-Fermer l’onglet avec des modifications déclenche l’avertissement du navigateur.
-Il n’y a pas de brouillon stocké localement : en cas de coupure, garder la page ouverte.
+Ctrl/Cmd+Z annule une modification locale, Ctrl/Cmd+Shift+Z ou Ctrl+Y la rétablit.
+Les opérations d’annulation sont elles aussi transformées avec les changements distants.
+Le curseur et la sélection sont déplacés lorsque du texte est ajouté ou supprimé par un autre client.
 
-Les sauvegardes des autres personnes sont reçues dans l’éditeur. Si le document a aussi
-été modifié localement, la sauvegarde est bloquée pour éviter d’écraser leur travail.
-Copier le texte à conserver, puis recharger la version du serveur. La fusion des frappes
-simultanées en texte riche reste à implémenter ; le panneau d’appels viendra ensuite.
+Pendant une coupure réseau, le texte reste visible mais l’édition est suspendue.
+Si une opération n’a pas été confirmée, la reconnexion ne la renvoie pas automatiquement :
+elle pourrait avoir été appliquée avant la coupure. Le texte local reste disponible à copier
+ou télécharger, puis l’utilisateur peut recharger la version du serveur.
+Un avertissement protège les modifications non confirmées avant de changer de fichier ou de quitter.
+Aucun brouillon n’est stocké dans le navigateur.
+
+Les anciens documents contenant du JSON Tiptap ne sont pas convertis automatiquement.
+Ils restent affichés comme du texte ; leur conversion en Markdown doit être faite séparément.
+Les nouveaux documents ne contiennent que le Markdown brut.
 
 ## Appels audio
 
@@ -129,7 +140,7 @@ npm run test:documents
 Les tests audio du front couvrent la présence, l’annulation pendant la demande de micro,
 le refus d’autorisation, l’ordre des candidats ICE, la coupure du micro et le nettoyage des connexions.
 Ils utilisent des doublures de Socket.IO et du navigateur.
-Les tests documents couvrent le format, les conflits, les reconnexions et la confirmation de sauvegarde.
+Les tests documents couvrent les frappes concurrentes, les retards réseau, les annulations, la reconnexion et le rendu Markdown.
 Les tests du back se lancent séparément dans son conteneur Docker.
 
 Pour vérifier un appel complet, ouvrir deux sessions authentifiées, rejoindre le même salon,

@@ -1,50 +1,28 @@
-import { getSchema, type JSONContent } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
+﻿import type { TextOperation } from './textOperation.ts'
 
-const formatPrefix = 'COEDIT_RICH_TEXT_V1\n'
-const documentSchema = getSchema([StarterKit.configure({ heading: { levels: [1, 2, 3] } })])
-
-export function decodeDocument(content: string): JSONContent {
-    if (content.startsWith(formatPrefix)) {
-        const document = JSON.parse(content.slice(formatPrefix.length)) as JSONContent
-        if (document.type !== 'doc' || !Array.isArray(document.content)) {
-            throw new Error('Le format du document est invalide.')
-        }
-        documentSchema.nodeFromJSON(document).check()
-        return document
-    }
-    return {
-        type: 'doc',
-        content: content.split('\n').map((line) => ({
-            type: 'paragraph',
-            ...(line ? { content: [{ type: 'text', text: line }] } : {}),
-        })),
-    }
-}
-
-export function encodeDocument(document: JSONContent): string {
-    return formatPrefix + JSON.stringify(document)
-}
-
-export type TextOperation = ({ retain: number } | { insert: string } | { delete: number })[]
-
-export function replaceDocument(previous: string, next: string): TextOperation {
+export function operationFromChange(previous: string, next: string, preferredStart?: number): TextOperation {
+    let start = 0
+    while (start < previous.length && start < next.length && previous[start] === next[start]) start += 1
+    if (preferredStart !== undefined) start = Math.min(start, preferredStart)
+    let end = 0
+    while (end < previous.length - start && end < next.length - start && previous[previous.length - end - 1] === next[next.length - end - 1]) end += 1
+    const inserted = next.slice(start, next.length - end)
+    const deleted = previous.length - start - end
     return [
-        ...(next.length ? [{ insert: next }] : []),
-        ...(previous.length ? [{ delete: previous.length }] : []),
+        ...(start ? [{ retain: start }] : []),
+        ...(inserted ? [{ insert: inserted }] : []),
+        ...(deleted ? [{ delete: deleted }] : []),
+        ...(end ? [{ retain: end }] : []),
     ]
 }
 
-export function applyDocumentOperation(content: string, operation: TextOperation): string {
+export function invertOperation(content: string, operation: TextOperation): TextOperation {
     let position = 0
-    let result = ''
-    for (const component of operation) {
-        if ('insert' in component) result += component.insert
-        else if ('retain' in component) {
-            result += content.slice(position, position + component.retain)
-            position += component.retain
-        } else position += component.delete
-    }
-    if (position !== content.length) throw new Error('Le document doit être rechargé.')
-    return result
+    return operation.map((component) => {
+        if ('insert' in component) return { delete: component.insert.length }
+        if ('retain' in component) { position += component.retain; return component }
+        const insert = content.slice(position, position + component.delete)
+        position += component.delete
+        return { insert }
+    })
 }

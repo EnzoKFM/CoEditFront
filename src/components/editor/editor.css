@@ -1,6 +1,6 @@
 .coedit-content {
     min-height: 420px;
-    padding: clamp(1.25rem, 5vw, 3.5rem);
+    padding: 1.25rem;
     line-height: 1.75;
     overflow-wrap: anywhere;
     color: #334155;
@@ -22,4 +22,7 @@
 .coedit-content pre { overflow-x: auto; border-radius: .5rem; background: #0f172a; color: #e2e8f0; padding: 1rem; }
 .coedit-content pre code { background: none; padding: 0; color: inherit; }
 .coedit-content hr { border: 0; border-top: 1px solid #cbd5e1; margin-block: 1.5rem; }
-.coedit-content p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; height: 0; color: #64748b; pointer-events: none; }
+
+.coedit-content table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.coedit-content th, .coedit-content td { border: 1px solid #cbd5e1; padding: .5rem; }
+.coedit-content img { max-width: 100%; height: auto; }
