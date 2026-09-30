@@ -128,6 +128,41 @@ test('coupe réellement la piste puis ferme les ressources au raccrochage', asyn
     assert.equal(client.getSnapshot().status, 'ended')
 })
 
+async function setupConnectedCall(context) {
+    const setupResult = setup()
+    context.after(() => setupResult.client.dispose())
+    await setupResult.client.start(participant)
+    setupResult.socket.receive('call:accepted', { callId: 'call-1', clientId: 'remote' })
+    await settle()
+    setupResult.peer.connectionState = 'connected'
+    setupResult.peer.onconnectionstatechange()
+    return setupResult
+}
+
+test('prévient l’interlocuteur quand on coupe puis réactive son micro', async (context) => {
+    const { client, socket } = await setupConnectedCall(context)
+    client.toggleMute()
+    client.toggleMute()
+    const muteEvents = socket.sent.filter(({ event }) => event === 'call:mute').map(({ payload }) => payload)
+    assert.deepEqual(muteEvents, [{ muted: true }, { muted: false }])
+})
+
+test('affiche le micro coupé de l’interlocuteur et l’oublie à la fin de l’appel', async (context) => {
+    const { client, socket } = await setupConnectedCall(context)
+    assert.equal(client.getSnapshot().peerMuted, false)
+    socket.receive('call:mute', { clientId: 'autre-personne', muted: true })
+    assert.equal(client.getSnapshot().peerMuted, false)
+    socket.receive('call:mute', { clientId: 'remote', muted: true })
+    assert.equal(client.getSnapshot().peerMuted, true)
+    socket.receive('call:mute', { clientId: 'remote', muted: false })
+    assert.equal(client.getSnapshot().peerMuted, false)
+    socket.receive('call:mute', { clientId: 'remote', muted: true })
+    socket.receive('call:ended', { callId: 'call-1', reason: 'hangup' })
+    assert.equal(client.getSnapshot().peerMuted, false)
+    socket.receive('call:mute', { clientId: 'remote', muted: true })
+    assert.equal(client.getSnapshot().peerMuted, false)
+})
+
 test('refuser un appel ne demande pas le microphone', (context) => {
     let requested = false
     const { client, socket } = setup(async () => { requested = true })

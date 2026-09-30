@@ -45,7 +45,12 @@ function getCallStatusText(state: AudioCallState) {
         case 'outgoing': return 'Appel en cours…'
         case 'incoming': return 'Vous appelle'
         case 'connecting': return 'Connexion…'
-        case 'connected': return state.muted ? 'En communication · micro coupé' : 'En communication'
+        case 'connected': {
+            const details = ['En communication']
+            if (state.peerMuted) details.push(`${state.participant?.user.name ?? 'Votre interlocuteur'} a coupé son micro`)
+            if (state.muted) details.push('votre micro est coupé')
+            return details.join(' · ')
+        }
         case 'ended': return state.message || 'Appel terminé'
         case 'error': return state.message || 'Appel interrompu'
         default: return ''
@@ -89,7 +94,7 @@ function CallControls({ client, state }: { client: AudioCallClient; state: Audio
     }
 }
 
-function ParticipantRow({ collaborator, children, highlight }: { collaborator: Collaborator; children?: ReactNode; highlight?: 'incoming' | 'connected' | 'other' }) {
+function ParticipantRow({ collaborator, children, highlight, isMicrophoneMuted = false }: { collaborator: Collaborator; children?: ReactNode; highlight?: 'incoming' | 'connected' | 'other'; isMicrophoneMuted?: boolean }) {
     const highlightClass = highlight === 'incoming'
         ? 'border-indigo-300 bg-indigo-50'
         : highlight === 'connected'
@@ -106,6 +111,11 @@ function ParticipantRow({ collaborator, children, highlight }: { collaborator: C
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800" title={collaborator.user.name}>
                     {collaborator.user.name}
                 </span>
+                {isMicrophoneMuted && (
+                    <span title={`${collaborator.user.name} a coupé son micro`} className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-red-50 text-red-700">
+                        <MicrophoneIcon muted />
+                    </span>
+                )}
                 {!highlight && children}
             </div>
             {highlight && children}
@@ -193,7 +203,7 @@ export function AudioCallRoom({ client, onRetry }: {
                             }
                             const highlight = state.status === 'incoming' ? 'incoming' : state.status === 'connected' ? 'connected' : 'other'
                             return (
-                                <ParticipantRow key={collaborator.clientId} collaborator={collaborator} highlight={highlight}>
+                                <ParticipantRow key={collaborator.clientId} collaborator={collaborator} highlight={highlight} isMicrophoneMuted={state.status === 'connected' && state.peerMuted}>
                                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 pl-11">
                                         <p
                                             role={state.status === 'error' ? 'alert' : 'status'}

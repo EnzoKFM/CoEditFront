@@ -27,6 +27,7 @@ export interface AudioCallState {
     status: CallStatus
     participant: Collaborator | null
     muted: boolean
+    peerMuted: boolean
     message: string
     remoteStream: MediaStream | null
 }
@@ -55,7 +56,7 @@ export class AudioCallClient {
     private disconnectDeadline: ReturnType<typeof setTimeout> | undefined
     private state: AudioCallState = {
         connection: 'connecting', connectionError: '', collaborators: [],
-        status: 'idle', participant: null, muted: false, message: '', remoteStream: null,
+        status: 'idle', participant: null, muted: false, peerMuted: false, message: '', remoteStream: null,
     }
 
     constructor(socket: Socket, fileId: number, userName: string, resources: CallResources, managesDocument = true) {
@@ -77,6 +78,7 @@ export class AudioCallClient {
         socket.on('call:incoming', this.incoming)
         socket.on('call:accepted', this.accepted)
         socket.on('call:signal', this.receiveSignal)
+        socket.on('call:mute', this.peerMuteChanged)
         socket.on('call:ended', this.ended)
         if (this.managesDocument) socket.connect()
     }
@@ -158,7 +160,7 @@ export class AudioCallClient {
     private begin(participant: Collaborator, status: CallStatus) {
         this.generation += 1
         this.active = true
-        this.update({ participant, status, muted: false, message: '', remoteStream: null })
+        this.update({ participant, status, muted: false, peerMuted: false, message: '', remoteStream: null })
         this.setDeadline('L’appel n’a pas abouti. Vous pouvez réessayer.', 60000)
         return this.generation
     }
@@ -331,13 +333,19 @@ export class AudioCallClient {
         const muted = !this.state.muted
         this.localStream.getAudioTracks().forEach((track) => { track.enabled = !muted })
         this.update({ muted })
+        if (this.socket.connected) this.socket.emit('call:mute', { muted })
+    }
+
+    private peerMuteChanged = ({ clientId, muted }: { clientId: string; muted: boolean }) => {
+        if (!this.active || clientId !== this.state.participant?.clientId) return
+        this.update({ peerMuted: muted })
     }
 
     hangUp = () => this.finish('ended', 'Appel terminé.')
 
     reset = () => {
         if (this.active) return
-        this.update({ status: 'idle', participant: null, message: '', muted: false })
+        this.update({ status: 'idle', participant: null, message: '', muted: false, peerMuted: false })
     }
 
     private finish(status: CallStatus, message: string, notifyPeer = true) {
@@ -353,7 +361,7 @@ export class AudioCallClient {
         this.localStream = null
         this.candidates = []
         this.signalQueue = Promise.resolve()
-        this.update({ status, message, remoteStream: null, muted: false })
+        this.update({ status, message, remoteStream: null, muted: false, peerMuted: false })
     }
 
     dispose() {
@@ -367,6 +375,7 @@ export class AudioCallClient {
         this.socket.off('call:incoming', this.incoming)
         this.socket.off('call:accepted', this.accepted)
         this.socket.off('call:signal', this.receiveSignal)
+        this.socket.off('call:mute', this.peerMuteChanged)
         this.socket.off('call:ended', this.ended)
         if (this.managesDocument) {
             if (this.socket.connected) this.socket.emit('document:leave')
