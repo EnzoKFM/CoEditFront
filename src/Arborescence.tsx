@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "./lib/api";
+import { formatDateTime, formatRelativeTime } from "./lib/formatDate";
 import { ShareFolderDialog } from "./components/share/ShareFolderDialog";
 import { listSharedFolders, sharePermissionLabels, type SharedFolder } from "./shares/shareApi";
+
+export type NodeAuthor = {
+    id: number;
+    name: string;
+};
 
 export type DocumentNode = {
     id: number;
@@ -9,8 +15,22 @@ export type DocumentNode = {
     type: "folder" | "file";
     childrenCount?: number;
     size?: number;
+    createdAt?: string;
+    createdBy?: NodeAuthor | null;
     updatedAt: string;
+    updatedBy?: NodeAuthor | null;
 };
+
+const DELETED_AUTHOR_NAME = "un compte supprimé";
+
+function describeNodeHistory(node: DocumentNode) {
+    const updatedByName = node.updatedBy?.name ?? DELETED_AUTHOR_NAME;
+    const lines = [`Modifié le ${formatDateTime(node.updatedAt)} par ${updatedByName}`];
+    if (node.createdAt) {
+        lines.unshift(`Créé le ${formatDateTime(node.createdAt)} par ${node.createdBy?.name ?? DELETED_AUTHOR_NAME}`);
+    }
+    return lines.join("\n");
+}
 
 type FolderResponse = {
     folder: {
@@ -499,6 +519,11 @@ function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDelet
                                 </>
                             )}
                         </div>
+
+                        <p className="w-full px-1 text-xs leading-5 text-gray-500" title={describeNodeHistory(folder)}>
+                            Modifié <time dateTime={folder.updatedAt}>{formatRelativeTime(folder.updatedAt)}</time>
+                            {" par "}{folder.updatedBy?.name ?? DELETED_AUTHOR_NAME}
+                        </p>
                     </div>
                 ))}
             </div>
