@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "./lib/api";
 import { ShareFolderDialog } from "./components/share/ShareFolderDialog";
 import { listSharedFolders, sharePermissionLabels, type SharedFolder } from "./shares/shareApi";
@@ -35,6 +35,10 @@ interface ArborescenceProps {
     canDeleteNode?: (nodeId: number) => boolean;
 }
 
+const ROOT_DESTINATION = "root";
+
+type MoveDestination = number | typeof ROOT_DESTINATION;
+
 function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDeleted, onNodeMoved, canDeleteNode }: ArborescenceProps) {
     const [folders, setFolders] = useState<DocumentNode[]>([]);
     const [currentFolder, setCurrentFolder] = useState<number | null>(null);
@@ -44,9 +48,11 @@ function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDelet
     const [moveFolders, setMoveFolders] = useState<(DocumentNode & { depth: number })[]>([]);
     const [showMoveModal, setShowMoveModal] = useState(false);
     const [breadcrumb, setBreadcrumb] = useState< { id: number; name: string }[] >([]);
-    const [selectedMoveFolder, setSelectedMoveFolder] = useState<number | null>(null);
+    const [selectedMoveFolder, setSelectedMoveFolder] = useState<MoveDestination | null>(null);
     const [sharedFolders, setSharedFolders] = useState<SharedFolder[]>([]);
     const [folderToShare, setFolderToShare] = useState<DocumentNode | null>(null);
+    const latestNavigationRequestId = useRef(0);
+    const moveDialog = useRef<HTMLDialogElement>(null);
     const currentPermission = currentFolder === null ? "owner" : currentFolderData?.permission ?? "read";
     const canShareFolders = currentPermission === "owner";
     const canWrite = currentPermission !== "read";
@@ -65,6 +71,12 @@ function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDelet
         loadSharedFolders();
     }, []);
 
+    useEffect(() => {
+        if (showMoveModal) {
+            moveDialog.current?.showModal();
+        }
+    }, [showMoveModal]);
+
     function loadSharedFolders() {
         listSharedFolders()
             .then(setSharedFolders)
@@ -76,8 +88,12 @@ function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDelet
 
 
     function openFolder(folderId: number) {
+        const navigationRequestId = ++latestNavigationRequestId.current;
         apiFetch<FolderResponse>(`/api/folders/${folderId}/children`)
             .then((data) => {
+                if (navigationRequestId !== latestNavigationRequestId.current) {
+                    return;
+                }
                 setFolders(data.children);
                 setCurrentFolder(folderId);
                 setCurrentFolderData(data.folder);
@@ -120,9 +136,7 @@ function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDelet
                 name: name,
             }),
         })
-            .then((data) => {
-                console.log(data);
-
+            .then(() => {
                 if (currentFolder === null) {
                     return apiFetch<FolderResponse>("/api/folders/root/children")
                         .then((data) => {
@@ -283,19 +297,25 @@ function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDelet
             return;
         }
 
+        const destinationFolderId = selectedMoveFolder === ROOT_DESTINATION ? null : selectedMoveFolder;
+
         apiFetch<FolderResponse>(`/api/nodes/${moveNodeId}`, {
             method: "PATCH",
             headers: {
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({
-                parentId: selectedMoveFolder,
+                parentId: destinationFolderId,
             }),
         })
             .then(async () => {
-                const destination = await apiFetch<FolderResponse>(`/api/folders/${selectedMoveFolder}/children`);
-                onNodeMoved?.(moveNodeId, [...destination.breadcrumb.map((folder) => folder.id), selectedMoveFolder]);
-                setShowMoveModal(false);
+                if (destinationFolderId === null) {
+                    onNodeMoved?.(moveNodeId, []);
+                } else {
+                    const destination = await apiFetch<FolderResponse>(`/api/folders/${destinationFolderId}/children`);
+                    onNodeMoved?.(moveNodeId, [...destination.breadcrumb.map((folder) => folder.id), destinationFolderId]);
+                }
+                closeMoveModal();
                 setMoveNodeId(null);
                 setMoveNodeName("");
                 setSelectedMoveFolder(null);
@@ -315,9 +335,19 @@ function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDelet
             });
     }
 
+    function closeMoveModal() {
+        moveDialog.current?.close();
+        setShowMoveModal(false);
+        setSelectedMoveFolder(null);
+    }
+
     function openRoot() {
+        const navigationRequestId = ++latestNavigationRequestId.current;
         apiFetch<FolderResponse>("/api/folders/root/children")
             .then((data) => {
+                if (navigationRequestId !== latestNavigationRequestId.current) {
+                    return;
+                }
                 setFolders(data.children);
                 setCurrentFolder(null);
                 setCurrentFolderData(null);
@@ -514,68 +544,83 @@ function Arborescence({ selectedFileId, onFileSelect, onNodeRenamed, onNodeDelet
             )}
 
             {showMoveModal && (
-                <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/45">
-                    <div className="w-[500px] max-w-[90%] overflow-hidden rounded-xl bg-white shadow-2xl">
-                        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
-                            <h2 className="m-0 text-xl font-semibold">Déplacer "{moveNodeName}"</h2>
+                <dialog
+                    ref={moveDialog}
+                    aria-labelledby="move-dialog-title"
+                    onCancel={(event) => {
+                        event.preventDefault();
+                        closeMoveModal();
+                    }}
+                    className="m-auto w-[500px] max-w-[90%] overflow-hidden rounded-xl border-0 bg-white p-0 shadow-2xl backdrop:bg-black/45"
+                >
+                    <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+                        <h2 id="move-dialog-title" className="m-0 text-xl font-semibold">Déplacer "{moveNodeName}"</h2>
 
-                            <button
-                                className="rounded border-0 bg-transparent p-1 text-lg cursor-pointer hover:bg-gray-100"
-                                onClick={() => {
-                                    setShowMoveModal(false);
-                                    setSelectedMoveFolder(null);
-                                }}
-                            >
-                                ✕
-                            </button>
-                        </div>
-
-                        <p className="m-0 px-5 pb-2 pt-4 text-gray-500">
-                            Choisissez le dossier de destination :
-                        </p>
-
-                        <div className="max-h-[350px] overflow-y-auto px-2.5 py-1">
-                            {moveFolders.map((folder) => (
-                                <button
-                                    key={folder.id}
-                                    className={`block w-full rounded-md border-0 bg-transparent py-2 text-left text-sm cursor-pointer hover:bg-gray-100 ${
-                                        selectedMoveFolder === folder.id
-                                            ? "bg-blue-100 text-blue-700 font-semibold"
-                                            : ""
-                                    }`}
-                                    style={{
-                                        paddingLeft: `${16 + folder.depth * 25}px`,
-                                    }}
-                                    onClick={() => {
-                                        setSelectedMoveFolder(folder.id);
-                                    }}
-                                >
-                                    📁 {folder.name}
-                                </button>
-                            ))}
-                        </div>
-
-                        <div className="flex justify-end gap-2.5 border-t border-gray-200 px-5 py-4">
-                            <button
-                                className="rounded-md border border-gray-300 bg-white px-3.5 py-2 text-gray-700 cursor-pointer hover:bg-gray-100"
-                                onClick={() => {
-                                    setShowMoveModal(false);
-                                    setSelectedMoveFolder(null);
-                                }}
-                            >
-                                Annuler
-                            </button>
-
-                            <button
-                                className="rounded-md border-0 bg-blue-600 px-3.5 py-2 text-white cursor-pointer hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
-                                disabled={selectedMoveFolder === null}
-                                onClick={confirmMove}
-                            >
-                                📦 Déplacer ici
-                            </button>
-                        </div>
+                        <button
+                            type="button"
+                            aria-label="Fermer"
+                            className="rounded border-0 bg-transparent p-1 text-lg cursor-pointer hover:bg-gray-100"
+                            onClick={closeMoveModal}
+                        >
+                            ✕
+                        </button>
                     </div>
-                </div>
+
+                    <p className="m-0 px-5 pb-2 pt-4 text-gray-500">
+                        Choisissez le dossier de destination :
+                    </p>
+
+                    <div className="max-h-[350px] overflow-y-auto px-2.5 py-1">
+                        <button
+                            type="button"
+                            className={`block w-full rounded-md border-0 bg-transparent py-2 pl-4 text-left text-sm cursor-pointer hover:bg-gray-100 ${
+                                selectedMoveFolder === ROOT_DESTINATION
+                                    ? "bg-blue-100 text-blue-700 font-semibold"
+                                    : ""
+                            }`}
+                            onClick={() => {
+                                setSelectedMoveFolder(ROOT_DESTINATION);
+                            }}
+                        >
+                            🏠 Racine
+                        </button>
+                        {moveFolders.map((folder) => (
+                            <button
+                                key={folder.id}
+                                className={`block w-full rounded-md border-0 bg-transparent py-2 text-left text-sm cursor-pointer hover:bg-gray-100 ${
+                                    selectedMoveFolder === folder.id
+                                        ? "bg-blue-100 text-blue-700 font-semibold"
+                                        : ""
+                                }`}
+                                style={{
+                                    paddingLeft: `${16 + folder.depth * 25}px`,
+                                }}
+                                onClick={() => {
+                                    setSelectedMoveFolder(folder.id);
+                                }}
+                            >
+                                📁 {folder.name}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="flex justify-end gap-2.5 border-t border-gray-200 px-5 py-4">
+                        <button
+                            className="rounded-md border border-gray-300 bg-white px-3.5 py-2 text-gray-700 cursor-pointer hover:bg-gray-100"
+                            onClick={closeMoveModal}
+                        >
+                            Annuler
+                        </button>
+
+                        <button
+                            className="rounded-md border-0 bg-blue-600 px-3.5 py-2 text-white cursor-pointer hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                            disabled={selectedMoveFolder === null}
+                            onClick={confirmMove}
+                        >
+                            📦 Déplacer ici
+                        </button>
+                    </div>
+                </dialog>
             )}
         </div>
     );

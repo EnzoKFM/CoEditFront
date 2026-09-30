@@ -1,6 +1,7 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth/authContext';
+import { getErrorMessage } from '../lib/api';
 
 // Style d'un lien du menu : surligné quand c'est la page courante
 function navLinkClass({ isActive }: { isActive: boolean }) {
@@ -12,6 +13,19 @@ export function AppLayout() {
   const { user, logout } = useAuth();
   const leaveGuard = useRef<(() => boolean) | null>(null);
   const registerLeaveGuard = useCallback((guard: (() => boolean) | null) => { leaveGuard.current = guard; }, []);
+  const [logoutErrorMessage, setLogoutErrorMessage] = useState('');
+
+  async function confirmLogout() {
+    if (leaveGuard.current && !leaveGuard.current()) {
+      return;
+    }
+    setLogoutErrorMessage('');
+    try {
+      await logout();
+    } catch (error) {
+      setLogoutErrorMessage(`Déconnexion impossible : ${getErrorMessage(error)}`);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -36,12 +50,17 @@ export function AppLayout() {
             )}
           </nav>
           <div className="flex items-center gap-4 text-sm">
+            {logoutErrorMessage && (
+              <span role="alert" className="text-red-600">
+                {logoutErrorMessage}
+              </span>
+            )}
             <span className="text-slate-600">
               {user?.firstName} {user?.lastName}
             </span>
             <button
               type="button"
-              onClick={() => { if (!leaveGuard.current || leaveGuard.current()) void logout(); }}
+              onClick={() => void confirmLogout()}
               className="rounded-lg border border-slate-300 px-3 py-1.5 font-medium text-slate-700 transition hover:bg-slate-100"
             >
               Se déconnecter

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import * as authApi from './authApi';
+import { setUnauthorizedListener } from '../lib/api';
 import type { User } from './authApi';
 import { AuthContext } from './authContext';
 
@@ -15,6 +16,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then(setUser)
       .catch(() => setUser(null))
       .finally(() => setIsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    setUnauthorizedListener(() => setUser(null));
+    return () => setUnauthorizedListener(null);
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {

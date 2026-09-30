@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import DOMPurify from 'dompurify'
 import type { Collaborator, CollaboratorSelection } from '../../documents/types'
 import { transformIndex, type TextOperation } from '../../documents/textOperation'
 import { EditorToolbar } from './EditorToolbar'
@@ -54,7 +55,7 @@ export function DocumentEditor({ content, onChange, editable = true, canUndo, ca
         textarea.current = element
         setTextareaElement(element)
     }, [])
-    const preview = useMemo(() => renderMarkdown(content), [content])
+    const preview = useMemo(() => DOMPurify.sanitize(renderMarkdown(content), { ADD_ATTR: ['target'] }), [content])
     const sendPresence = () => {
         const input = textarea.current
         if (!input) return

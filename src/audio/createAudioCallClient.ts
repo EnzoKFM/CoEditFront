@@ -4,7 +4,12 @@ import { AudioCallClient } from './AudioCallClient'
 function getIceServers(): RTCIceServer[] {
     const configured = import.meta.env.VITE_ICE_SERVERS
     if (!configured) return [{ urls: 'stun:stun.l.google.com:19302' }]
-    const servers: unknown = JSON.parse(configured)
+    let servers: unknown
+    try {
+        servers = JSON.parse(configured)
+    } catch {
+        throw new Error('Configuration des serveurs ICE invalide.')
+    }
     if (!Array.isArray(servers) || !servers.length || servers.some((server) => !server || !server.urls)) {
         throw new Error('Configuration des serveurs ICE invalide.')
     }
