@@ -2,6 +2,12 @@
 
 Interface React, TypeScript et Tailwind de CoEdit.
 
+## Parcourir les documents
+
+L’accueil affiche les documents sur toute la largeur. La recherche porte sur les noms dans le dossier courant ; le tri et les vues liste/grille permettent de changer leur présentation. Le bouton « Nouveau » sert à créer un fichier ou un dossier, et le menu de chaque élément regroupe les actions autorisées.
+
+Ouvrir un fichier affiche l’éditeur et réduit la bibliothèque en panneau latéral. « Tous les documents » ferme l’éditeur en conservant le dossier parcouru. Les confirmations restent actives si un appel ou une synchronisation est en cours.
+
 ## Lancer le front
 
 Avec Node 22.18 ou plus récent (`nvm use` lit la version dans `.nvmrc`) :

@@ -1,8 +1,9 @@
-import { formatDateTime, formatRelativeTime } from "./lib/formatDate";
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { apiFetch, getErrorMessage } from "./lib/api";
 import { uploadBinaryFile } from "./documents/binaryFileApi";
-import { getFileIcon, isBinaryFile } from "./documents/binaryFileKind";
+import { DocumentBrowser } from "./components/documents/DocumentBrowser";
+import { Icon } from "./components/shared/Icon";
+import type { MenuAction } from "./components/shared/ActionMenu";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { apiFetch, getErrorMessage } from "./lib/api";
 import { ShareFolderDialog } from "./components/share/ShareFolderDialog";
 import { listSharedFolders, sharePermissionLabels, type SharedFolder } from "./shares/shareApi";
 
@@ -23,17 +24,6 @@ export type DocumentNode = {
     updatedAt: string;
     updatedBy?: NodeAuthor | null;
 };
-
-const DELETED_AUTHOR_NAME = "un compte supprimé";
-
-function describeNodeHistory(node: DocumentNode) {
-    const updatedByName = node.updatedBy?.name ?? DELETED_AUTHOR_NAME;
-    const lines = [`Modifié le ${formatDateTime(node.updatedAt)} par ${updatedByName}`];
-    if (node.createdAt) {
-        lines.unshift(`Créé le ${formatDateTime(node.createdAt)} par ${node.createdBy?.name ?? DELETED_AUTHOR_NAME}`);
-    }
-    return lines.join("\n");
-}
 
 type FolderResponse = {
     folder: {
@@ -75,7 +65,7 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
     const [selectedMoveFolder, setSelectedMoveFolder] = useState<MoveDestination | null>(null);
     const [sharedFolders, setSharedFolders] = useState<SharedFolder[]>([]);
     const [folderToShare, setFolderToShare] = useState<DocumentNode | null>(null);
-    const latestNavigationRequestId = useRef(0);
+
     const moveDialog = useRef<HTMLDialogElement>(null);
     const importFileInput = useRef<HTMLInputElement>(null);
     const [appliedReplacedFile, setAppliedReplacedFile] = useState(replacedFile);
@@ -87,22 +77,35 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
     if (replacedFile !== appliedReplacedFile) {
         setAppliedReplacedFile(replacedFile);
         if (replacedFile) {
-            setFolders((currentNodes) => currentNodes.map((currentNode) => currentNode.id === replacedFile.id ? { ...currentNode, name: replacedFile.name, mimeType: replacedFile.mimeType, size: replacedFile.size, updatedAt: replacedFile.updatedAt } : currentNode));
+            setFolders((currentNodes) => currentNodes.map((currentNode) => currentNode.id === replacedFile.id ? { ...currentNode, ...replacedFile } : currentNode));
         }
     }
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState("");
+    const folderRequest = useRef(0);
 
-    useEffect(() => {
-        apiFetch<FolderResponse>("/api/folders/root/children")
-            .then((data) => {
-                setFolders(data.children);
-                setBreadcrumb([]);
+    const loadFolder = useCallback((folderId: number | null) => {
+        const requestId = ++folderRequest.current;
+        return apiFetch<FolderResponse>(folderId === null ? "/api/folders/root/children" : `/api/folders/${folderId}/children`)
+            .then((response) => {
+                if (requestId !== folderRequest.current) return;
+                setLoadError("");
+                setFolders(response.children);
+                setCurrentFolder(folderId);
+                setCurrentFolderData(response.folder);
+                setBreadcrumb(response.breadcrumb);
             })
-            .catch((error) => {
-                console.error(error);
-                alert("Impossible de charger l'arborescence.");
+            .catch(() => {
+                if (requestId === folderRequest.current) setLoadError("Impossible de charger ce dossier. Réessayez.");
+            })
+            .finally(() => {
+                if (requestId === folderRequest.current) setLoading(false);
             });
-        loadSharedFolders();
     }, []);
+    useEffect(() => {
+        void loadFolder(null);
+        loadSharedFolders();
+    }, [loadFolder]);
 
     useEffect(() => {
         if (showMoveModal) {
@@ -113,44 +116,13 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
     function loadSharedFolders() {
         listSharedFolders()
             .then(setSharedFolders)
-            .catch((error) => {
-                console.error(error);
-                alert("Impossible de charger les dossiers partagés.");
-            });
+            .catch(() => setLoadError("Impossible de charger les dossiers partagés. Réessayez."));
     }
-
 
     function openFolder(folderId: number) {
-        const navigationRequestId = ++latestNavigationRequestId.current;
-        apiFetch<FolderResponse>(`/api/folders/${folderId}/children`)
-            .then((data) => {
-                if (navigationRequestId !== latestNavigationRequestId.current) {
-                    return;
-                }
-                setFolders(data.children);
-                setCurrentFolder(folderId);
-                setCurrentFolderData(data.folder);
-                setBreadcrumb(data.breadcrumb);
-            })
-            .catch((error) => {
-                console.error(error);
-                alert("Impossible d'ouvrir ce dossier.");
-            });
+        setLoading(true);
+        void loadFolder(folderId);
     }
-
-    function goBack() {
-        if (currentFolderData === null) {
-            return;
-        }
-
-        if (currentFolderData.parentId === null) {
-            openRoot();
-            return;
-        }
-
-        openFolder(currentFolderData.parentId);
-    }
-
     function createFolder() {
         const name = prompt("Nom du dossier :");
 
@@ -402,186 +374,40 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
     }
 
     function openRoot() {
-        const navigationRequestId = ++latestNavigationRequestId.current;
-        apiFetch<FolderResponse>("/api/folders/root/children")
-            .then((data) => {
-                if (navigationRequestId !== latestNavigationRequestId.current) {
-                    return;
-                }
-                setFolders(data.children);
-                setCurrentFolder(null);
-                setCurrentFolderData(null);
-                setBreadcrumb([]);
-            })
-            .catch((error) => {
-                console.error(error);
-                alert("Impossible de revenir à la racine.");
-            });
+        setLoading(true);
+        void loadFolder(null);
         loadSharedFolders();
     }
-
     return (
         <div>
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                    <h2 className="text-lg font-semibold text-slate-900">
-                        Documents
-                    </h2>
-                </div>
-
-                {canWrite && (
-                    <div className="flex flex-wrap gap-2">
-                        <button
-                           className="border-0 rounded-md px-3.5 py-2.5 bg-blue-600 text-white text-sm cursor-pointer hover:bg-blue-700"
-                            onClick={createFolder}
-                        >
-                            ➕ Nouveau dossier
-                        </button>
-
-                        <button
-                            className="border-0 rounded-md px-3.5 py-2.5 bg-blue-600 text-white text-sm cursor-pointer hover:bg-blue-700"
-                            onClick={createFile}
-                        >
-                            📄 Nouveau fichier
-                        </button>
-
-                        <button
-                            className="border-0 rounded-md px-3.5 py-2.5 bg-blue-600 text-white text-sm cursor-pointer hover:bg-blue-700"
-                            onClick={() => importFileInput.current?.click()}
-                        >
-                            📎 Importer un fichier
-                        </button>
-
-                        <input
-                            ref={importFileInput}
-                            type="file"
-                            className="hidden"
-                            onChange={importFile}
-                        />
-                    </div>
-                )}
-            </div>
-
-            <div className="mb-4 flex flex-wrap items-center gap-1.5 text-sm">
-                <button
-                    className="border-0 rounded-md px-3.5 py-2.5 bg-blue-600 text-white text-sm cursor-pointer hover:bg-blue-700"
-                    onClick={openRoot}
-                >
-                    🏠 Racine
-                </button>
-
-                {breadcrumb.map((item) => (
-                    <span key={item.id}>
-                        <span className="text-gray-400 mx-0.5">
-                            &gt;
-                        </span>
-
-                        <button
-                            className="border-0 bg-transparent px-1.5 py-1 text-blue-600 cursor-pointer text-sm hover:underline"
-                            onClick={() => openFolder(item.id)}
-                        >
-                            {item.name}
-                        </button>
-                    </span>
-                ))}
-            </div>
-
-            {currentFolder !== null && (
-                <button
-                    className="border border-gray-300 rounded-md px-3 py-2 mb-4 bg-white text-gray-700 cursor-pointer hover:bg-gray-100"
-                    onClick={goBack}
-                >
-                    ← Retour
-                </button>
-            )}
-
-            <div>
-                {folders.map((folder) => (
-                    <div
-                        key={folder.id}
-                        className={`mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2 transition-colors ${selectedFileId === folder.id ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 bg-white'}`}
-                    >
-                        <button
-                            type="button"
-                            className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-2 text-left hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-indigo-600"
-                            aria-current={selectedFileId === folder.id ? 'true' : undefined}
-                            aria-label={`${folder.type === 'folder' ? 'Ouvrir le dossier' : isBinaryFile(folder.mimeType) ? 'Ouvrir le fichier' : 'Modifier le fichier'} ${folder.name}`}
-                            onClick={() => {
-                                if (folder.type === 'folder') openFolder(folder.id);
-                                else onFileSelect?.(folder, [...breadcrumb.map((ancestor) => ancestor.id), ...(currentFolder === null ? [] : [currentFolder])]);
-                            }}
-                        >
-                            <span aria-hidden="true" className="text-xl">
-                                {folder.type === "folder" ? "📁" : getFileIcon(folder.mimeType)}
-                            </span>
-
-                            <span className="min-w-0 break-words text-sm text-gray-700">
-                                {folder.name}
-                            </span>
-                        </button>
-
-                        <div className="flex items-center gap-1.5">
-                            {folder.type === "folder" && canShareFolders && (
-                                <button
-                                    className="border-0 bg-transparent p-1 rounded cursor-pointer text-base hover:bg-gray-200"
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        setFolderToShare(folder);
-                                    }}
-                                    title="Partager"
-                                >
-                                    👥
-                                </button>
-                            )}
-
-                            {canWrite && (
-                                <button
-                                    className="border-0 bg-transparent p-1 rounded cursor-pointer text-base hover:bg-gray-200"
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        renameNode(folder.id, folder.name);
-                                    }}
-                                    title="Renommer"
-                                >
-                                    ✏️
-                                </button>
-                            )}
-
-                            {canMoveOrDelete && (
-                                <>
-                                    <button
-                                        className="border-0 bg-transparent p-1 rounded cursor-pointer text-base hover:bg-gray-200"
-                                        onClick={(event) => {
-                                            event.stopPropagation();
-                                            moveNode(folder.id, folder.name);
-                                        }}
-                                        title="Déplacer"
-                                    >
-                                        📦
-                                    </button>
-
-                                    <button
-                                        className="border-0 bg-transparent p-1 rounded cursor-pointer text-base hover:bg-gray-200"
-                                        onClick={(event) => {
-                                            event.stopPropagation();
-                                            deleteNode(folder.id, folder.name);
-                                        }}
-                                        title="Supprimer"
-                                    >
-                                        🗑️
-                                    </button>
-                                </>
-                            )}
-                        </div>
-
-                        <p className="w-full px-1 text-xs leading-5 text-gray-500" title={describeNodeHistory(folder)}>
-                            Modifié <time dateTime={folder.updatedAt}>{formatRelativeTime(folder.updatedAt)}</time>
-                            {" par "}{folder.updatedBy?.name ?? DELETED_AUTHOR_NAME}
-                        </p>
-                    </div>
-                ))}
-            </div>
-
+            <input ref={importFileInput} type="file" className="hidden" onChange={importFile} />
+            <DocumentBrowser
+                folders={folders}
+                loading={loading}
+                error={loadError}
+                onRetry={() => { setLoading(true); void loadFolder(currentFolder); loadSharedFolders(); }}
+                currentFolder={currentFolder}
+                folderName={currentFolderData?.name}
+                breadcrumb={breadcrumb}
+                selectedFileId={selectedFileId}
+                canWrite={canWrite}
+                onOpenFolder={openFolder}
+                onOpenRoot={openRoot}
+                onCreateFolder={createFolder}
+                onCreateFile={createFile}
+                onImportFile={() => importFileInput.current?.click()}
+                onOpenFile={(file) => onFileSelect?.(file, [...breadcrumb.map((ancestor) => ancestor.id), ...(currentFolder === null ? [] : [currentFolder])])}
+                getActions={(node) => {
+                    const actions: MenuAction[] = [];
+                    if (node.type === "folder" && canShareFolders) actions.push({ label: "Partager", icon: "users", onClick: () => setFolderToShare(node) });
+                    if (canWrite) actions.push({ label: "Renommer", icon: "edit", onClick: () => renameNode(node.id, node.name) });
+                    if (canMoveOrDelete) {
+                        actions.push({ label: "Déplacer", icon: "move", onClick: () => { void moveNode(node.id, node.name); } });
+                        actions.push({ label: "Supprimer", icon: "trash", danger: true, onClick: () => deleteNode(node.id, node.name) });
+                    }
+                    return actions;
+                }}
+            />
             {currentFolder === null && sharedFolders.length > 0 && (
                 <div className="mt-6">
                     <h3 className="mb-2 text-sm font-semibold text-slate-900">
@@ -596,10 +422,7 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
                             aria-label={`Ouvrir le dossier partagé ${sharedFolder.name}`}
                             onClick={() => openFolder(sharedFolder.id)}
                         >
-                            <span aria-hidden="true" className="relative text-xl">
-                                📁
-                                <span className="absolute -bottom-1 -right-1.5 text-xs">👥</span>
-                            </span>
+                            <Icon name="users" className="size-6 shrink-0 text-indigo-500" />
 
                             <span className="min-w-0 flex-1">
                                 <span className="block break-words text-sm text-gray-700">

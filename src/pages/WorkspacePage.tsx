@@ -119,8 +119,8 @@ function Workspace({ selected, session, onSelect }: WorkspaceProps) {
     }
 
     return (
-        <div className="grid items-start gap-6 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[18rem_minmax(0,1fr)_18rem]">
-            <aside aria-label="Vos documents" className="rounded-xl border border-slate-200 bg-white p-4 lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto">
+        <div className={selected ? `grid items-start gap-6 lg:grid-cols-[18rem_minmax(0,1fr)] ${isBinaryFile(selected.node.mimeType) ? "" : "xl:grid-cols-[18rem_minmax(0,1fr)_18rem]"}` : ""}>
+            <aside aria-label="Vos documents" className={selected ? "min-w-0 rounded-2xl border border-slate-200 bg-white p-4" : "rounded-2xl border border-slate-200 bg-white p-5 sm:p-8"}>
                 <Arborescence
                     selectedFileId={selected?.node.id}
                     replacedFile={replacedFile}
@@ -150,15 +150,12 @@ function Workspace({ selected, session, onSelect }: WorkspaceProps) {
                     }}
                 />
             </aside>
-            <section aria-label="Document ouvert" className="min-w-0">
-                {!selected && (
-                    <div className="flex min-h-80 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
-                        <h1 className="text-xl font-semibold text-slate-900">
-                            Votre espace de travail
-                        </h1>
-                        <p className="mt-3 max-w-md text-sm text-slate-500">
-                            Choisissez un fichier dans vos documents pour l’ouvrir ici, créez-en un pour commencer à écrire, ou importez un PDF, une image ou tout autre fichier.
-                        </p>
+            <section aria-label="Document ouvert" className="min-w-0" hidden={!selected}>
+                {selected && (
+                    <div className="mb-4">
+                        <Button onClick={() => requestAction(() => onSelect(null))}>
+                            Tous les documents
+                        </Button>
                     </div>
                 )}
                 {selected && isBinaryFile(selected.node.mimeType) && (
