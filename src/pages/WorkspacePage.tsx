@@ -43,8 +43,9 @@ function Workspace({ selected, client, onSelect }: WorkspaceProps) {
     const state = useSyncExternalStore(client?.subscribe ?? emptySubscribe, client?.getSnapshot ?? emptySnapshot)
     const [pendingAction, setPendingAction] = useState<(() => void) | null>(null)
     const { registerLeaveGuard } = useOutletContext<WorkspaceOutletContext>()
-    const blocker = useBlocker(Boolean(state?.dirty || state?.saving))
-    const canSave = Boolean(state?.dirty && state.status === 'ready' && !state.conflict && !state.saving)
+    const [waiting, setWaiting] = useState(false)
+    const blocker = useBlocker(Boolean(state?.dirty))
+    const canWait = state?.status === 'ready'
 
     useEffect(() => {
         client?.connect()
@@ -52,8 +53,8 @@ function Workspace({ selected, client, onSelect }: WorkspaceProps) {
     }, [client])
 
     useEffect(() => {
-        const hasChanges = () => Boolean(client?.getSnapshot().dirty || client?.getSnapshot().saving)
-        registerLeaveGuard(() => !hasChanges() || (!client?.getSnapshot().saving && window.confirm('Quitter sans enregistrer les modifications du document ?')))
+        const hasChanges = () => Boolean(client?.getSnapshot().dirty)
+        registerLeaveGuard(() => !hasChanges() || window.confirm('Quitter alors que certaines modifications ne sont pas encore confirmées par le serveur ?'))
         const beforeUnload = (event: BeforeUnloadEvent) => {
             if (hasChanges()) { event.preventDefault(); event.returnValue = '' }
         }
@@ -68,7 +69,7 @@ function Workspace({ selected, client, onSelect }: WorkspaceProps) {
         const onKeyDown = (event: KeyboardEvent) => {
             if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
                 event.preventDefault()
-                void client?.save()
+                void client?.waitForSync()
             }
         }
         window.addEventListener('keydown', onKeyDown)
@@ -76,7 +77,6 @@ function Workspace({ selected, client, onSelect }: WorkspaceProps) {
     }, [client])
 
     function requestAction(action: () => void) {
-        if (state?.saving) return
         if (state?.dirty) setPendingAction(() => action)
         else action()
     }
@@ -89,6 +89,17 @@ function Workspace({ selected, client, onSelect }: WorkspaceProps) {
 
     function affectsSelection(nodeId: number) {
         return selected?.node.id === nodeId || Boolean(selected?.ancestorIds.includes(nodeId))
+    }
+
+    function downloadText() {
+        if (state?.content === null || state?.content === undefined) return
+        const url = URL.createObjectURL(new Blob([state.content], { type: 'text/markdown;charset=utf-8' }))
+        const link = document.createElement('a')
+        link.href = url
+        const name = selected?.node.name ?? 'document'
+        link.download = name.toLowerCase().endsWith('.md') ? name : `${name}.md`
+        link.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
     }
 
     return (
@@ -111,8 +122,8 @@ function Workspace({ selected, client, onSelect }: WorkspaceProps) {
                         }
                     }}
                     canDeleteNode={(nodeId) => {
-                        if (affectsSelection(nodeId) && (state?.dirty || state?.saving)) {
-                            window.alert('Enregistrez ou rechargez le document ouvert avant de le supprimer ou de supprimer son dossier.')
+                        if (affectsSelection(nodeId) && state?.dirty) {
+                            window.alert('Attendez la synchronisation du document avant de le supprimer ou de supprimer son dossier.')
                             return false
                         }
                         return true
@@ -141,12 +152,9 @@ function Workspace({ selected, client, onSelect }: WorkspaceProps) {
                                     {selected.node.name}
                                 </h1>
                                 <p role="status" className="mt-1 text-sm text-slate-500">
-                                    {state.saving ? 'Enregistrement…' : state.dirty ? 'Modifications non enregistrées' : state.saved ? 'Enregistré' : state.status === 'loading' ? 'Chargement…' : 'Aucune modification en attente'}
+                                    {state.status === 'loading' ? 'Chargement…' : state.dirty ? 'Modifications en cours de transmission' : state.status === 'ready' ? 'À jour · Sauvegarde automatique' : 'Synchronisation interrompue'}
                                 </p>
                             </div>
-                            <Button variant="primary" disabled={!canSave} onClick={() => void client?.save()}>
-                                Enregistrer
-                            </Button>
                         </header>
                         {state.message && (
                             <div role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -154,8 +162,13 @@ function Workspace({ selected, client, onSelect }: WorkspaceProps) {
                                     {state.message}
                                 </p>
                                 <div className="mt-3 flex flex-wrap gap-2">
-                                    {state.conflict && (
-                                        <Button onClick={() => requestAction(() => client?.reload())} disabled={state.saving}>
+                                    {state.dirty && state.status !== 'ready' && (
+                                        <Button onClick={downloadText}>
+                                            Télécharger mon texte
+                                        </Button>
+                                    )}
+                                    {state.status === 'recovery' && (
+                                        <Button onClick={() => requestAction(() => client?.reload())}>
                                             Recharger la version du serveur
                                         </Button>
                                     )}
@@ -167,20 +180,32 @@ function Workspace({ selected, client, onSelect }: WorkspaceProps) {
                                 </div>
                             </div>
                         )}
-                        {state.content && (
-                            <DocumentEditor key={`${selected.node.id}:${state.editorVersion}`} initialContent={state.content} onChange={client?.change} editable={state.status === 'ready' && !state.saving} />
+                        {state.content !== null && client && (
+                            <DocumentEditor
+                                key={selected.node.id}
+                                content={state.content}
+                                onChange={client.change}
+                                editable={state.status === 'ready'}
+                                canUndo={state.canUndo}
+                                canRedo={state.canRedo}
+                                onUndo={client.undo}
+                                onRedo={client.redo}
+                                subscribeRemote={client.subscribeRemote}
+                                onCompositionStart={client.startComposition}
+                                onCompositionEnd={client.endComposition}
+                            />
                         )}
                     </>
                 )}
             </section>
             {(pendingAction || blocker.state === 'blocked') && (
                 <UnsavedChangesDialog
-                    saving={Boolean(state?.saving)}
-                    canSave={canSave}
+                    waiting={waiting}
+                    canWait={canWait}
                     message={state?.message}
                     onCancel={() => { setPendingAction(null); if (blocker.state === 'blocked') blocker.reset() }}
                     onDiscard={continueAction}
-                    onSave={() => { void client?.save().then((saved) => { if (saved) continueAction() }) }}
+                    onWait={() => { setWaiting(true); void client?.waitForSync().then((synced) => { setWaiting(false); if (synced) continueAction() }) }}
                 />
             )}
         </div>
