@@ -69,6 +69,11 @@ L’éditeur travaille directement sur une chaîne Markdown. L’aperçu affiche
 listes, liens et styles ; la barre d’outils insère leur syntaxe dans le texte.
 Le HTML saisi est affiché comme du texte dans l’aperçu.
 
+## Partage de dossiers
+
+Le bouton 👥 d’un dossier dont on est propriétaire ouvre la fenêtre de partage : saisir l’adresse email d’un compte, choisir la permission (lecture, écriture, écriture et suppression) et confirmer. La même fenêtre liste les utilisateurs ayant accès, permet de modifier la permission de chacun ou de lui retirer l’accès.
+Les dossiers partagés avec l’utilisateur apparaissent à la racine, sous « Partagés avec moi », avec une icône dédiée, le nom du propriétaire et la permission accordée. Dans un dossier partagé, les actions s’affichent selon la permission : aucune en lecture, création et renommage en écriture, déplacement et suppression en plus avec « Écriture et suppression ».
+
 Chaque modification produit une opération `retain` / `insert` / `delete`, envoyée par
 `document:operation`. Une seule opération attend son accusé à la fois ; les suivantes
 restent en attente et sont transformées avec les opérations reçues des autres personnes.
