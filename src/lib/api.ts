@@ -23,6 +23,12 @@ export function getErrorMessage(error: unknown): string {
 }
 
 // Appel à l'API : envoie le cookie de session et transforme les erreurs en ApiError
+let unauthorizedListener: (() => void) | null = null;
+
+export function setUnauthorizedListener(listener: (() => void) | null) {
+  unauthorizedListener = listener;
+}
+
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (options.body && !headers.has('Content-Type')) {
@@ -41,6 +47,9 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   }
 
   const data = await response.json().catch(() => null);
+  if (response.status === 401) {
+    unauthorizedListener?.();
+  }
   if (!response.ok) {
     throw new ApiError(response.status, data?.error ?? 'Une erreur inattendue est survenue');
   }

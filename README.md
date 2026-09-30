@@ -4,7 +4,7 @@ Interface React, TypeScript et Tailwind de CoEdit.
 
 ## Lancer le front
 
-Avec Node 22.18 ou plus récent :
+Avec Node 22.18 ou plus récent (`nvm use` lit la version dans `.nvmrc`) :
 
 ```bash
 npm ci
