@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { MAX_CALL_CAMERAS, MAX_CALL_MEMBERS, type AudioCallClient, type AudioCallState } from '../../audio/AudioCallClient'
-import { CameraIcon, ExpandIcon, MicrophoneIcon, MinimizeIcon, UserPlusIcon } from './callIcons'
+import { CameraIcon, ExpandIcon, MicrophoneIcon, MinimizeIcon, UserPlusIcon, ChatIcon } from './callIcons'
 import { getInitials } from './getInitials'
+import { ChatPanel } from '../chat/ChatPanel'
 import { JoinRequestBanner } from './JoinRequests'
 
 interface Tile {
@@ -212,6 +213,7 @@ export function CallStage({ client, state, speakingParticipantIds, documentName,
 }) {
     const stageRef = useRef<HTMLDivElement>(null)
     const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
+    const [isChatOpen, setIsChatOpen] = useState(false)
     const tiles = buildTiles(state)
 
     useEffect(() => {
@@ -258,17 +260,42 @@ export function CallStage({ client, state, speakingParticipantIds, documentName,
             )}
             {state.receivedJoinRequests.length > 0 && (
                 <div className="mx-4 mt-2 shrink-0">
-                    <JoinRequestBanner client={client} requests={state.receivedJoinRequests} tone="dark" />
+                    <JoinRequestBanner
+                        client={client}
+                        requests={state.receivedJoinRequests}
+                        tone="dark"
+                    />
                 </div>
             )}
-            <main className="grid min-h-0 flex-1 place-items-center overflow-y-auto p-4">
-                <div className={`grid w-full gap-3 ${getGridClass(tiles.length)}`}>
-                    {tiles.map((tile) => <VideoTile key={tile.id} tile={tile} isSpeaking={speakingParticipantIds.has(tile.id)} />)}
+
+            <main className="flex min-h-0 flex-1 gap-4 overflow-hidden p-4">
+                <div className="flex min-w-0 flex-1 items-center justify-center overflow-y-auto">
+                    <div className={`grid w-full gap-3 ${getGridClass(tiles.length)}`}>
+                        {tiles.map((tile) => (
+                            <VideoTile
+                                key={tile.id}
+                                tile={tile}
+                                isSpeaking={speakingParticipantIds.has(tile.id)}
+                            />
+                        ))}
+                    </div>
                 </div>
+
+                {isChatOpen && (
+                    <div className="flex w-80 shrink-0 flex-col">
+                        <ChatPanel
+                            socket={client.socket}
+                            isJoined={state.connection === 'ready'}
+                        />
+                    </div>
+                )}
             </main>
             <footer className="relative flex shrink-0 items-center justify-center gap-3 px-4 py-4">
                 {isAddMenuOpen && <AddParticipantMenu client={client} state={state} onClose={() => setIsAddMenuOpen(false)} />}
                 <MediaButtons client={client} state={state} />
+                <RoundButton label={isChatOpen ? 'Fermer le chat' : 'Ouvrir le chat'}onClick={() => setIsChatOpen((isOpen) => !isOpen)}>
+                    <ChatIcon />
+                </RoundButton>
                 <RoundButton label="Ajouter une personne" onClick={() => setIsAddMenuOpen((isOpen) => !isOpen)}>
                     <UserPlusIcon />
                 </RoundButton>
