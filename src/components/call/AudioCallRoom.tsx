@@ -1,5 +1,6 @@
 import { MAX_CALL_MEMBERS, type AudioCallClient, type AudioCallState, type Collaborator } from '../../audio/AudioCallClient'
 import { useCallAlerts, useRingtonesPreference } from '../../audio/useCallAlerts'
+import { useSpeakingParticipants } from '../../audio/useSpeakingParticipants'
 import { useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ChatPanel } from '../chat/ChatPanel'
 import { CallMiniBar, CallStage } from './CallStage'
@@ -83,7 +84,7 @@ function CallControls({ client, state }: { client: AudioCallClient; state: Audio
     }
 }
 
-function ParticipantRow({ collaborator, children, highlight, isMicrophoneMuted = false }: { collaborator: Collaborator; children?: ReactNode; highlight?: 'incoming' | 'connected' | 'other'; isMicrophoneMuted?: boolean }) {
+function ParticipantRow({ collaborator, children, highlight, isMicrophoneMuted = false, isSpeaking = false }: { collaborator: Collaborator; children?: ReactNode; highlight?: 'incoming' | 'connected' | 'other'; isMicrophoneMuted?: boolean; isSpeaking?: boolean }) {
     const highlightClass = highlight === 'incoming'
         ? 'border-indigo-300 bg-indigo-50'
         : highlight === 'connected'
@@ -94,7 +95,7 @@ function ParticipantRow({ collaborator, children, highlight, isMicrophoneMuted =
     return (
         <li className={`rounded-lg border px-2 py-1.5 ${highlightClass}`}>
             <div className="flex items-center gap-3">
-                <span aria-hidden="true" className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700">
+                <span aria-hidden="true" className={`grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700 ring-green-500 ring-offset-2 transition-shadow duration-150 ${isSpeaking ? 'ring-2 shadow-[0_0_10px_3px_rgba(34,197,94,0.45)]' : 'ring-0'}`}>
                     {getInitials(collaborator.user.name)}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800" title={collaborator.user.name}>
@@ -124,6 +125,10 @@ export function AudioCallRoom({ client, documentName, onRetry }: {
     const isInCall = JOINED_CALL_STATUSES.includes(state.status)
     const isCallFull = state.callMembers.length + state.invitedClientIds.length + 1 >= MAX_CALL_MEMBERS
     const canCall = state.connection === 'ready' && (isInCall ? !isCallFull : !busy)
+    const speakingParticipantIds = useSpeakingParticipants([
+        { participantId: 'moi', stream: state.localAudioStream, isMicrophoneMuted: state.muted },
+        ...state.callMembers.map((member) => ({ participantId: member.collaborator.clientId, stream: member.stream, isMicrophoneMuted: member.muted })),
+    ])
     const [isStageMinimized, setIsStageMinimized] = useState(false)
     const [wasInCall, setWasInCall] = useState(isInCall)
     if (wasInCall !== isInCall) {
@@ -198,7 +203,7 @@ export function AudioCallRoom({ client, documentName, onRetry }: {
                             const callMember = state.callMembers.find((member) => member.collaborator.clientId === collaborator.clientId)
                             if (callMember) {
                                 return (
-                                    <ParticipantRow key={collaborator.clientId} collaborator={collaborator} highlight={callMember.connected ? 'connected' : 'other'} isMicrophoneMuted={callMember.muted}>
+                                    <ParticipantRow key={collaborator.clientId} collaborator={collaborator} highlight={callMember.connected ? 'connected' : 'other'} isMicrophoneMuted={callMember.muted} isSpeaking={speakingParticipantIds.has(collaborator.clientId)}>
                                         <p className={`mt-1 pl-11 text-xs font-medium ${callMember.connected ? 'text-green-700' : 'text-slate-600'}`}>
                                             {callMember.connected ? 'En communication' : 'Connexion…'}
                                         </p>
@@ -283,7 +288,7 @@ export function AudioCallRoom({ client, documentName, onRetry }: {
             </section>
             {state.callMembers.map((member) => member.stream && <RemoteAudio key={member.collaborator.clientId} stream={member.stream} />)}
             {isInCall && !isStageMinimized && (
-                <CallStage client={client} state={state} documentName={documentName} statusText={getCallStatusText(state)} onMinimize={() => setIsStageMinimized(true)} />
+                <CallStage client={client} state={state} speakingParticipantIds={speakingParticipantIds} documentName={documentName} statusText={getCallStatusText(state)} onMinimize={() => setIsStageMinimized(true)} />
             )}
             {isInCall && isStageMinimized && (
                 <CallMiniBar client={client} state={state} statusText={getCallStatusText(state)} onExpand={() => setIsStageMinimized(false)} />

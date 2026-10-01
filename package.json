@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "test:audio": "node --test tests/audioCallClient.test.mjs",
+    "test:audio": "node --test tests/audioCallClient.test.mjs tests/speakingDetector.test.mjs",
     "test:documents": "node --test tests/documentSessionClient.test.mjs",
     "test:files": "node --test tests/binaryFileKind.test.mjs",
     "test:ringtone": "node --test tests/ringtone.test.mjs",

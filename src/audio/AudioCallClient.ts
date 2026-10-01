@@ -59,6 +59,7 @@ export interface AudioCallState {
     invitedClientIds: string[]
     muted: boolean
     cameraOn: boolean
+    localAudioStream: MediaStream | null
     localVideoStream: MediaStream | null
     message: string
     ongoingCalls: OngoingCall[]
@@ -129,8 +130,8 @@ export class AudioCallClient {
     private state: AudioCallState = {
         connection: 'connecting', connectionError: '', collaborators: [],
         status: 'idle', participant: null, callMembers: [], invitedClientIds: [], muted: false,
-        cameraOn: false, localVideoStream: null, message: '',
         ongoingCalls: [], ownJoinRequest: null, receivedJoinRequests: [],
+        cameraOn: false, localAudioStream: null, localVideoStream: null, message: '',
     }
 
     constructor(socket: Socket, fileId: number, userName: string, resources: CallResources, managesDocument = true) {
@@ -348,6 +349,7 @@ export class AudioCallClient {
             return false
         }
         this.localStream = stream
+        this.update({ localAudioStream: stream })
         stream.getTracks().forEach((track) => {
             track.onended = () => {
                 if (this.isCurrent(generation)) this.finish('error', 'Le microphone a été déconnecté.')
@@ -704,7 +706,7 @@ export class AudioCallClient {
         this.stopCamera()
         this.localStream?.getTracks().forEach((track) => { track.onended = null; track.stop() })
         this.localStream = null
-        this.update({ status, message, muted: false, callMembers: [], invitedClientIds: [], receivedJoinRequests: [] })
+        this.update({ status, message, muted: false, localAudioStream: null, callMembers: [], invitedClientIds: [], receivedJoinRequests: [] })
     }
 
     dispose() {
