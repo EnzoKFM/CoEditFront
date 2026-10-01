@@ -132,7 +132,13 @@ export function AudioCallRoom({ client, documentName, onRetry }: {
     }
     const incomingCaller = state.status === 'incoming' ? state.participant : null
     const isIncomingCallerPresent = state.collaborators.some((collaborator) => collaborator.clientId === incomingCaller?.clientId)
-    const listedParticipants = incomingCaller && !isIncomingCallerPresent ? [...state.collaborators, incomingCaller] : state.collaborators
+    
+    const listedParticipants = [...state.collaborators]
+    if (incomingCaller && !isIncomingCallerPresent) listedParticipants.push(incomingCaller)
+    listedParticipants.sort((first, second) =>
+        first.user.name.localeCompare(second.user.name, 'fr', { sensitivity: 'base' })
+        || first.clientId.localeCompare(second.clientId)
+    )
     const ownClientId = client.socket.id
     const clientIdsInOtherCalls = new Set(state.ongoingCalls
         .filter((call) => !ownClientId || !call.participantClientIds.includes(ownClientId))
