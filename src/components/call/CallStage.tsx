@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { MAX_CALL_CAMERAS, MAX_CALL_MEMBERS, type AudioCallClient, type AudioCallState } from '../../audio/AudioCallClient'
 import { CameraIcon, ExpandIcon, MicrophoneIcon, MinimizeIcon, UserPlusIcon } from './callIcons'
 import { getInitials } from './getInitials'
+import { JoinRequestBanner } from './JoinRequests'
 
 interface Tile {
     id: string
@@ -252,6 +253,11 @@ export function CallStage({ client, state, documentName, statusText, onMinimize 
                     {state.message}
                 </p>
             )}
+            {state.receivedJoinRequests.length > 0 && (
+                <div className="mx-4 mt-2 shrink-0">
+                    <JoinRequestBanner client={client} requests={state.receivedJoinRequests} tone="dark" />
+                </div>
+            )}
             <main className="grid min-h-0 flex-1 place-items-center overflow-y-auto p-4">
                 <div className={`grid w-full gap-3 ${getGridClass(tiles.length)}`}>
                     {tiles.map((tile) => <VideoTile key={tile.id} tile={tile} />)}
@@ -281,7 +287,7 @@ export function CallMiniBar({ client, state, statusText, onExpand }: {
     onExpand: () => void
 }) {
     return (
-        <div role="region" aria-label="Appel en cours" className="fixed inset-x-4 bottom-4 z-40 flex items-center gap-2 rounded-2xl bg-slate-900 p-2 pl-4 text-white shadow-lg sm:left-auto sm:w-auto">
+        <div role="region" aria-label="Appel en cours" className="fixed inset-x-4 bottom-4 z-40 flex items-center gap-2 rounded-2xl bg-slate-900 p-2 pl-4 text-white shadow-lg sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2">
             <p role="status" className="min-w-0 flex-1 truncate text-sm font-medium sm:max-w-56">{statusText}</p>
             <MediaButtons client={client} state={state} />
             <RoundButton label="Agrandir l’appel" onClick={onExpand}>
