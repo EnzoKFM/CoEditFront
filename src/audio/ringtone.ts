@@ -51,14 +51,19 @@ export class RingtonePlayer {
         this.stop()
         const context = this.getContext()
         if (!context) return
-        if (context.state === 'suspended') void context.resume().catch(() => {})
         const pattern = RINGTONE_PATTERNS[kind]
         const playCycle = () => {
+            if (context.state !== 'running') return
             const cycleStart = context.currentTime
             pattern.steps.forEach((step) => this.playTone(context, step, cycleStart, pattern.volume))
         }
-        playCycle()
-        this.cycleTimer = setInterval(playCycle, pattern.cycleMs)
+        const cycleTimer = setInterval(playCycle, pattern.cycleMs)
+        this.cycleTimer = cycleTimer
+        if (context.state === 'suspended') {
+            void context.resume().then(() => {
+                if (this.cycleTimer === cycleTimer) playCycle()
+            }).catch(() => {})
+        } else playCycle()
     }
 
     stop() {

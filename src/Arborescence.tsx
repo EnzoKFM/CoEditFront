@@ -65,6 +65,7 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
     const [selectedMoveFolder, setSelectedMoveFolder] = useState<MoveDestination | null>(null);
     const [sharedFolders, setSharedFolders] = useState<SharedFolder[]>([]);
     const [folderToShare, setFolderToShare] = useState<DocumentNode | null>(null);
+    const [isMovePending, setIsMovePending] = useState(false);
 
     const moveDialog = useRef<HTMLDialogElement>(null);
     const importFileInput = useRef<HTMLInputElement>(null);
@@ -119,17 +120,22 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
             .catch(() => setLoadError("Impossible de charger les dossiers partagés. Réessayez."));
     }
 
+    function reloadCurrentFolderUnlessNavigated(folderRequestAtChange: number) {
+        if (folderRequestAtChange === folderRequest.current) return loadFolder(currentFolder);
+    }
+
     function openFolder(folderId: number) {
         setLoading(true);
         void loadFolder(folderId);
     }
     function createFolder() {
-        const name = prompt("Nom du dossier :");
+        const name = prompt("Nom du dossier :")?.trim();
 
         if (!name) {
             return;
         }
 
+        const folderRequestAtChange = folderRequest.current;
         apiFetch<FolderResponse>("/api/nodes", {
             method: "POST",
             headers: {
@@ -142,14 +148,7 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
             }),
         })
             .then(() => {
-                if (currentFolder === null) {
-                    return apiFetch<FolderResponse>("/api/folders/root/children")
-                        .then((data) => {
-                            setFolders(data.children);
-                        });
-                }
-
-                openFolder(currentFolder);
+                return reloadCurrentFolderUnlessNavigated(folderRequestAtChange);
             })
             .catch((error) => {
                 console.error(error);
@@ -158,12 +157,13 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
     }
 
     function createFile() {
-        const name = prompt("Nom du fichier :");
+        const name = prompt("Nom du fichier :")?.trim();
 
         if (!name) {
             return;
         }
 
+        const folderRequestAtChange = folderRequest.current;
         apiFetch<DocumentNode>("/api/nodes", {
             method: "POST",
             headers: {
@@ -178,14 +178,7 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
             .then((createdFile) => {
                 onFileSelect?.(createdFile, [...breadcrumb.map((folder) => folder.id), ...(currentFolder === null ? [] : [currentFolder])]);
 
-                if (currentFolder === null) {
-                    return apiFetch<FolderResponse>("/api/folders/root/children")
-                        .then((data) => {
-                            setFolders(data.children);
-                        });
-                }
-
-                openFolder(currentFolder);
+                return reloadCurrentFolderUnlessNavigated(folderRequestAtChange);
             })
             .catch((error) => {
                 console.error(error);
@@ -201,18 +194,12 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
             return;
         }
 
+        const folderRequestAtChange = folderRequest.current;
         uploadBinaryFile(importedFile, currentFolder)
             .then((createdFile) => {
                 onFileSelect?.(createdFile, [...breadcrumb.map((folder) => folder.id), ...(currentFolder === null ? [] : [currentFolder])]);
 
-                if (currentFolder === null) {
-                    return apiFetch<FolderResponse>("/api/folders/root/children")
-                        .then((data) => {
-                            setFolders(data.children);
-                        });
-                }
-
-                openFolder(currentFolder);
+                return reloadCurrentFolderUnlessNavigated(folderRequestAtChange);
             })
             .catch((error) => {
                 console.error(error);
@@ -221,12 +208,13 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
     }
 
     function renameNode(nodeId: number, currentName: string) {
-        const newName = prompt("Nouveau nom :", currentName);
+        const newName = prompt("Nouveau nom :", currentName)?.trim();
 
         if (!newName || newName === currentName) {
             return;
         }
 
+        const folderRequestAtChange = folderRequest.current;
         apiFetch<FolderResponse>(`/api/nodes/${nodeId}`, {
             method: "PATCH",
             headers: {
@@ -239,14 +227,7 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
             .then(() => {
                 onNodeRenamed?.(nodeId, newName);
 
-                if (currentFolder === null) {
-                    return apiFetch<FolderResponse>("/api/folders/root/children")
-                        .then((data) => {
-                            setFolders(data.children);
-                        });
-                }
-
-                openFolder(currentFolder);
+                return reloadCurrentFolderUnlessNavigated(folderRequestAtChange);
             })
             .catch((error) => {
                 console.error(error);
@@ -264,19 +245,13 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
             return;
         }
 
+        const folderRequestAtChange = folderRequest.current;
         apiFetch<FolderResponse>(`/api/nodes/${nodeId}`, {
             method: "DELETE",
         })
             .then(() => {
                 onNodeDeleted?.(nodeId);
-                if (currentFolder === null) {
-                    return apiFetch<FolderResponse>("/api/folders/root/children")
-                        .then((data) => {
-                            setFolders(data.children);
-                        });
-                }
-
-                openFolder(currentFolder);
+                return reloadCurrentFolderUnlessNavigated(folderRequestAtChange);
             })
             .catch((error) => {
                 console.error(error);
@@ -285,6 +260,10 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
     }
 
     async function moveNode(nodeId: number, nodeName: string) {
+        if (isMovePending) {
+            return;
+        }
+
         const folders: (DocumentNode & { depth: number })[] = [];
 
         async function loadFolders(
@@ -310,6 +289,7 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
             }
         }
 
+        setIsMovePending(true);
         try {
             await loadFolders(null, 0);
 
@@ -321,16 +301,33 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
         } catch (error) {
             console.error(error);
             alert("Impossible de récupérer les dossiers.");
+        } finally {
+            setIsMovePending(false);
         }
     }
 
+    function getMoveDestinationAncestorIds(destinationFolderId: number) {
+        const destinationIndex = moveFolders.findIndex((moveFolder) => moveFolder.id === destinationFolderId);
+        const ancestorIds = [destinationFolderId];
+        let ancestorDepth = moveFolders[destinationIndex].depth - 1;
+        for (let folderIndex = destinationIndex - 1; folderIndex >= 0 && ancestorDepth >= 0; folderIndex -= 1) {
+            if (moveFolders[folderIndex].depth === ancestorDepth) {
+                ancestorIds.unshift(moveFolders[folderIndex].id);
+                ancestorDepth -= 1;
+            }
+        }
+        return ancestorIds;
+    }
+
     function confirmMove() {
-        if (moveNodeId === null || selectedMoveFolder === null) {
+        if (moveNodeId === null || selectedMoveFolder === null || isMovePending) {
             return;
         }
 
         const destinationFolderId = selectedMoveFolder === ROOT_DESTINATION ? null : selectedMoveFolder;
+        const folderRequestAtChange = folderRequest.current;
 
+        setIsMovePending(true);
         apiFetch<FolderResponse>(`/api/nodes/${moveNodeId}`, {
             method: "PATCH",
             headers: {
@@ -340,31 +337,20 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
                 parentId: destinationFolderId,
             }),
         })
-            .then(async () => {
-                if (destinationFolderId === null) {
-                    onNodeMoved?.(moveNodeId, []);
-                } else {
-                    const destination = await apiFetch<FolderResponse>(`/api/folders/${destinationFolderId}/children`);
-                    onNodeMoved?.(moveNodeId, [...destination.breadcrumb.map((folder) => folder.id), destinationFolderId]);
-                }
+            .then(() => {
+                onNodeMoved?.(moveNodeId, destinationFolderId === null ? [] : getMoveDestinationAncestorIds(destinationFolderId));
                 closeMoveModal();
                 setMoveNodeId(null);
                 setMoveNodeName("");
                 setSelectedMoveFolder(null);
 
-                if (currentFolder === null) {
-                    return apiFetch<FolderResponse>("/api/folders/root/children")
-                        .then((data) => {
-                            setFolders(data.children);
-                        });
-                }
-
-                openFolder(currentFolder);
+                return reloadCurrentFolderUnlessNavigated(folderRequestAtChange);
             })
             .catch((error) => {
                 console.error(error);
                 alert("Impossible de déplacer cet élément.");
-            });
+            })
+            .finally(() => setIsMovePending(false));
     }
 
     function closeMoveModal() {
@@ -516,7 +502,7 @@ function Arborescence({ selectedFileId, replacedFile, onFileSelect, onNodeRename
 
                         <button
                             className="rounded-md border-0 bg-blue-600 px-3.5 py-2 text-white cursor-pointer hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
-                            disabled={selectedMoveFolder === null}
+                            disabled={selectedMoveFolder === null || isMovePending}
                             onClick={confirmMove}
                         >
                             📦 Déplacer ici

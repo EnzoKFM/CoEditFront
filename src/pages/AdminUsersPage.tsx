@@ -22,7 +22,14 @@ export function AdminUsersPage() {
     // Évite de mettre à jour l'état si la page a été quittée avant la réponse
     let isStillDisplayed = true;
     listUsers()
-      .then((loadedUsers) => isStillDisplayed && setUsers(loadedUsers))
+      .then(
+        (loadedUsers) =>
+          isStillDisplayed &&
+          setUsers((currentUsers) => [
+            ...loadedUsers,
+            ...currentUsers.filter((displayedUser) => !loadedUsers.some((loadedUser) => loadedUser.id === displayedUser.id)),
+          ]),
+      )
       .catch((loadError) => isStillDisplayed && setListError(getErrorMessage(loadError)))
       .finally(() => isStillDisplayed && setIsLoading(false));
     return () => {
@@ -194,18 +201,21 @@ type UsersTableProps = {
 // Liste des comptes avec leur statut et le bouton de blocage
 function UsersTable({ users, onUserUpdated }: UsersTableProps) {
   const { user: currentUser } = useAuth();
-  const [pendingUserId, setPendingUserId] = useState<number | null>(null);
+  const [pendingUserIds, setPendingUserIds] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   async function toggleBlocked(user: AdminUser) {
+    if (!user.isBlocked && !window.confirm(`Bloquer le compte de ${user.firstName} ${user.lastName} (${user.email}) ?`)) {
+      return;
+    }
     setError(null);
-    setPendingUserId(user.id);
+    setPendingUserIds((currentIds) => [user.id, ...currentIds]);
     try {
       onUserUpdated(await setUserBlocked(user.id, !user.isBlocked));
     } catch (blockError) {
       setError(getErrorMessage(blockError));
     } finally {
-      setPendingUserId(null);
+      setPendingUserIds((currentIds) => currentIds.filter((pendingUserId) => pendingUserId !== user.id));
     }
   }
 
@@ -250,18 +260,19 @@ function UsersTable({ users, onUserUpdated }: UsersTableProps) {
                 </td>
                 <td className="py-3 text-right">
                   {/* L'admin connecté ne peut pas se bloquer lui même */}
-                  {user.id === currentUser?.id ? (
-                    <span className="text-xs text-slate-400">Vous</span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => toggleBlocked(user)}
-                      disabled={pendingUserId === user.id}
-                      className={`${secondaryButtonClass} px-3 py-1 text-xs`}
-                    >
-                      {user.isBlocked ? 'Débloquer' : 'Bloquer'}
-                    </button>
-                  )}
+                  {currentUser &&
+                    (user.id === currentUser.id ? (
+                      <span className="text-xs text-slate-400">Vous</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => toggleBlocked(user)}
+                        disabled={pendingUserIds.includes(user.id)}
+                        className={`${secondaryButtonClass} px-3 py-1 text-xs`}
+                      >
+                        {user.isBlocked ? 'Débloquer' : 'Bloquer'}
+                      </button>
+                    ))}
                 </td>
               </tr>
             ))}

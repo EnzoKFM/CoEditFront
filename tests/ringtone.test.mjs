@@ -129,6 +129,46 @@ test('réveille un contexte audio suspendu (bloqué avant la première interacti
     assert.equal(context.state, 'running')
 })
 
+test('n’empile pas de cycles tant que le contexte audio reste suspendu', (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] })
+    const { context, player } = createPlayer()
+    context.state = 'suspended'
+    context.resume = () => Promise.reject(new Error('Lecture automatique bloquée'))
+
+    player.start('incoming')
+    t.mock.timers.tick(RINGTONE_PATTERNS.incoming.cycleMs * 3)
+    assert.equal(context.oscillators.length, 0)
+
+    context.state = 'running'
+    t.mock.timers.tick(RINGTONE_PATTERNS.incoming.cycleMs)
+    assert.equal(context.oscillators.length, 4)
+    player.stop()
+})
+
+test('joue le premier cycle dès que le contexte suspendu reprend', async (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] })
+    const { context, player } = createPlayer()
+    context.state = 'suspended'
+
+    player.start('incoming')
+    await Promise.resolve()
+
+    assert.equal(context.oscillators.length, 4)
+    player.stop()
+})
+
+test('ne joue rien si la sonnerie est arrêtée avant la reprise du contexte', async (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] })
+    const { context, player } = createPlayer()
+    context.state = 'suspended'
+
+    player.start('incoming')
+    player.stop()
+    await Promise.resolve()
+
+    assert.ok(context.oscillators.every((oscillator) => oscillator.stoppedNow))
+})
+
 test('ne fait rien sans Web Audio disponible', () => {
     const player = new RingtonePlayer(() => null)
 

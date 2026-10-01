@@ -79,6 +79,11 @@ test('la position de frappe est respectée pour des caractères identiques', () 
     assert.deepEqual(operationFromChange('aaa', 'aaaa', 1), [{ retain: 1 }, { insert: 'a' }, { retain: 2 }])
 })
 
+test('remplacer un emoji ne coupe jamais une paire de substitution UTF-16', () => {
+    assert.deepEqual(operationFromChange('a\u{1F600}b', 'a\u{1F601}b'), [{ retain: 1 }, { insert: '\u{1F601}' }, { delete: 2 }, { retain: 1 }])
+    assert.deepEqual(operationFromChange('\u{1F600}x', '\u{1FA00}x'), [{ insert: '\u{1FA00}' }, { delete: 2 }, { retain: 1 }])
+})
+
 test('deux insertions au même endroit et des frappes en attente convergent', () => {
     const network = createNetwork('Bonjour')
     const [alice, bob] = network.peers

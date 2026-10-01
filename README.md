@@ -64,7 +64,7 @@ La connexion utilise le cookie de session du back. Les comptes sont créés par 
 - `/arborescence` et `/editor` : redirection vers l’accueil.
 - `/calls` et `/calls/:fileId` : redirection vers l’accueil.
 - `/profil`, `/a2f` : profil et double authentification.
-- `/admin/utilisateurs` : gestion des comptes, réservée aux administrateurs.
+- `/admin/utilisateurs` : gestion des comptes, réservée aux administrateurs. Bloquer un compte demande une confirmation.
 
 Les pages métier nécessitent une session ouverte.
 
@@ -77,7 +77,7 @@ Le HTML saisi est affiché comme du texte dans l’aperçu.
 
 ### Fichiers binaires
 
-« Importer un fichier » envoie un PDF, une image ou tout autre fichier (20 Mo maximum) dans
+« Importer un fichier » envoie un PDF, une image ou tout autre fichier (20 Mo maximum, vérifiés avant l’envoi) dans
 le dossier courant, via `POST /api/files`. Son icône dépend du type MIME : 🖼️ image, 📕 PDF,
 📎 autre ; 📄 reste celle des documents texte, dont `mimeType` vaut `null`.
 Un fichier binaire s’ouvre dans une visionneuse, sans collaboration temps réel ni appel :
@@ -90,7 +90,7 @@ Les octets sont chargés avec `fetch` puis affichés depuis une URL `blob:` ; le
 
 ## Partage de dossiers
 
-Le bouton 👥 d’un dossier dont on est propriétaire ouvre la fenêtre de partage : saisir l’adresse email d’un compte, choisir la permission (lecture, écriture, écriture et suppression) et confirmer. La même fenêtre liste les utilisateurs ayant accès, permet de modifier la permission de chacun ou de lui retirer l’accès.
+Le bouton 👥 d’un dossier dont on est propriétaire ouvre la fenêtre de partage : saisir l’adresse email d’un compte, choisir la permission (lecture, écriture, écriture et suppression) et confirmer. La même fenêtre liste les utilisateurs ayant accès, permet de modifier la permission de chacun ou de lui retirer l’accès, après confirmation.
 Les dossiers partagés avec l’utilisateur apparaissent à la racine, sous « Partagés avec moi », avec une icône dédiée, le nom du propriétaire et la permission accordée. Dans un dossier partagé, les actions s’affichent selon la permission : aucune en lecture, création et renommage en écriture, déplacement et suppression en plus avec « Écriture et suppression ».
 
 Chaque modification produit une opération `retain` / `insert` / `delete`, envoyée par
