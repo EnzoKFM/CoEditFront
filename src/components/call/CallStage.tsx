@@ -3,6 +3,7 @@ import { MAX_CALL_CAMERAS, MAX_CALL_MEMBERS, type AudioCallClient, type AudioCal
 import { CameraIcon, ExpandIcon, MicrophoneIcon, MinimizeIcon, UserPlusIcon, ChatIcon } from './callIcons'
 import { getInitials } from './getInitials'
 import { ChatPanel } from '../chat/ChatPanel'
+import { JoinRequestBanner } from './JoinRequests'
 
 interface Tile {
     id: string
@@ -54,7 +55,7 @@ function buildTiles(state: AudioCallState): Tile[] {
     return [ownTile, ...memberTiles, ...invitedTiles]
 }
 
-function VideoTile({ tile }: { tile: Tile }) {
+function VideoTile({ tile, isSpeaking }: { tile: Tile; isSpeaking: boolean }) {
     const videoRef = useRef<HTMLVideoElement>(null)
     const hasVideo = tile.showVideo && Boolean(tile.stream)
 
@@ -72,11 +73,12 @@ function VideoTile({ tile }: { tile: Tile }) {
                 <video ref={videoRef} autoPlay playsInline muted className={`h-full w-full object-cover ${tile.mirrored ? '-scale-x-100' : ''}`} />
             ) : (
                 <div className="grid h-full place-items-center">
-                    <span aria-hidden="true" className="grid h-16 w-16 place-items-center rounded-full bg-indigo-500 text-xl font-semibold text-white sm:h-20 sm:w-20 sm:text-2xl">
+                    <span aria-hidden="true" className={`grid h-16 w-16 place-items-center rounded-full bg-indigo-500 text-xl font-semibold text-white ring-green-400 ring-offset-4 ring-offset-slate-800 transition-shadow duration-150 sm:h-20 sm:w-20 sm:text-2xl ${isSpeaking ? 'ring-4 shadow-[0_0_24px_8px_rgba(74,222,128,0.45)]' : 'ring-0'}`}>
                         {getInitials(tile.name)}
                     </span>
                 </div>
             )}
+            <div aria-hidden="true" className={`pointer-events-none absolute inset-0 rounded-xl ring-4 ring-inset ring-green-400 transition-opacity duration-150 ${isSpeaking ? 'opacity-100' : 'opacity-0'}`} />
             <div className="absolute bottom-2 left-2 flex max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-white">
                 {tile.microphoneMuted && (
                     <span title={`${tile.name} a coupé son micro`} className="shrink-0 text-red-300">
@@ -84,6 +86,7 @@ function VideoTile({ tile }: { tile: Tile }) {
                     </span>
                 )}
                 <span className="truncate">{tile.name}</span>
+                {isSpeaking && <span className="sr-only">parle</span>}
                 {tile.detail && <span className="shrink-0 text-slate-300">· {tile.detail}</span>}
             </div>
         </div>
@@ -200,9 +203,10 @@ function AddParticipantMenu({ client, state, onClose }: { client: AudioCallClien
     )
 }
 
-export function CallStage({ client, state, documentName, statusText, onMinimize }: {
+export function CallStage({ client, state, speakingParticipantIds, documentName, statusText, onMinimize }: {
     client: AudioCallClient
     state: AudioCallState
+    speakingParticipantIds: Set<string>
     documentName: string
     statusText: string
     onMinimize: () => void
@@ -254,10 +258,26 @@ export function CallStage({ client, state, documentName, statusText, onMinimize 
                     {state.message}
                 </p>
             )}
+            {state.receivedJoinRequests.length > 0 && (
+                <div className="mx-4 mt-2 shrink-0">
+                    <JoinRequestBanner
+                        client={client}
+                        requests={state.receivedJoinRequests}
+                        tone="dark"
+                    />
+                </div>
+            )}
+
             <main className="flex min-h-0 flex-1 gap-4 overflow-hidden p-4">
                 <div className="flex min-w-0 flex-1 items-center justify-center overflow-y-auto">
                     <div className={`grid w-full gap-3 ${getGridClass(tiles.length)}`}>
-                        {tiles.map((tile) => <VideoTile key={tile.id} tile={tile} />)}
+                        {tiles.map((tile) => (
+                            <VideoTile
+                                key={tile.id}
+                                tile={tile}
+                                isSpeaking={speakingParticipantIds.has(tile.id)}
+                            />
+                        ))}
                     </div>
                 </div>
 
@@ -297,7 +317,7 @@ export function CallMiniBar({ client, state, statusText, onExpand }: {
     onExpand: () => void
 }) {
     return (
-        <div role="region" aria-label="Appel en cours" className="fixed inset-x-4 bottom-4 z-40 flex items-center gap-2 rounded-2xl bg-slate-900 p-2 pl-4 text-white shadow-lg sm:left-auto sm:w-auto">
+        <div role="region" aria-label="Appel en cours" className="fixed inset-x-4 bottom-4 z-40 flex items-center gap-2 rounded-2xl bg-slate-900 p-2 pl-4 text-white shadow-lg sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2">
             <p role="status" className="min-w-0 flex-1 truncate text-sm font-medium sm:max-w-56">{statusText}</p>
             <MediaButtons client={client} state={state} />
             <RoundButton label="Agrandir l’appel" onClick={onExpand}>

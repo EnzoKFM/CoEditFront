@@ -6,6 +6,7 @@ Interface d’appel à deux, branchée au back avec Socket.IO et WebRTC.
 
 Lancer le back et `npm run dev`, puis ouvrir le même fichier dans deux sessions connectées.
 Le panneau « Sur ce document » permet de s’appeler tout en continuant à éditer.
+Les participants sont affichés par ordre alphabétique de leur nom, indépendamment des déplacements de leur curseur.
 Le micro est demandé au démarrage ou à l’acceptation. Quitter le document demande confirmation
 puis termine l’appel. Raccrocher conserve l’édition et sa connexion.
 

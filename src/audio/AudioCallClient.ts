@@ -7,6 +7,7 @@ export type { Collaborator } from '../documents/types'
 export const MAX_CALL_MEMBERS = 12
 export const MAX_CALL_CAMERAS = 6
 
+const JOIN_REQUEST_TIMEOUT_MS = 60000
 const UPLINK_ESTIMATE_INTERVAL_MS = 5000
 const UPLINK_USABLE_SHARE = 0.85
 const AUDIO_RESERVED_BITRATE = 50_000
@@ -37,6 +38,17 @@ export interface CallMember {
     stream: MediaStream | null
 }
 
+export interface OngoingCall {
+    callId: string
+    participantClientIds: string[]
+}
+
+export interface OwnJoinRequest {
+    callId: string
+    pending: boolean
+    message: string
+}
+
 export interface AudioCallState {
     connection: 'connecting' | 'ready' | 'error'
     connectionError: string
@@ -47,8 +59,12 @@ export interface AudioCallState {
     invitedClientIds: string[]
     muted: boolean
     cameraOn: boolean
+    localAudioStream: MediaStream | null
     localVideoStream: MediaStream | null
     message: string
+    ongoingCalls: OngoingCall[]
+    ownJoinRequest: OwnJoinRequest | null
+    receivedJoinRequests: Collaborator[]
 }
 
 interface CallResources {
@@ -110,10 +126,12 @@ export class AudioCallClient {
     private estimatedUplinkBitrate: number | null = null
     private uplinkEstimateTimer: ReturnType<typeof setInterval> | undefined
     private deadline: ReturnType<typeof setTimeout> | undefined
+    private joinRequestDeadline: ReturnType<typeof setTimeout> | undefined
     private state: AudioCallState = {
         connection: 'connecting', connectionError: '', collaborators: [],
         status: 'idle', participant: null, callMembers: [], invitedClientIds: [], muted: false,
-        cameraOn: false, localVideoStream: null, message: '',
+        ongoingCalls: [], ownJoinRequest: null, receivedJoinRequests: [],
+        cameraOn: false, localAudioStream: null, localVideoStream: null, message: '',
     }
 
     constructor(socket: Socket, fileId: number, userName: string, resources: CallResources, managesDocument = true) {
@@ -139,16 +157,92 @@ export class AudioCallClient {
         socket.on('call:camera', this.peerCameraChanged)
         socket.on('call:left', this.left)
         socket.on('call:ended', this.ended)
+        socket.on('call:status', this.callStatusChanged)
+        socket.on('call:join-request', this.joinRequestReceived)
+        socket.on('call:join-declined', this.joinRequestDeclined)
         if (this.managesDocument) socket.connect()
     }
 
     joiningDocument = () => {
         this.finish('idle', '')
-        this.update({ connection: 'connecting', connectionError: '', collaborators: [], participant: null })
+        this.clearOwnJoinRequest()
+        this.update({ connection: 'connecting', connectionError: '', collaborators: [], participant: null, ongoingCalls: [] })
     }
 
     joinedDocument = (collaborators: Collaborator[]) => {
         this.update({ connection: 'ready', connectionError: '', collaborators: collaborators.filter((collaborator) => collaborator.clientId !== this.socket.id) })
+        this.refreshCallStatus()
+    }
+
+    private refreshCallStatus() {
+        this.socket.timeout(10000).emit('call:status', (failure: Error | null, reply?: { calls?: OngoingCall[] }) => {
+            if (!failure && reply?.calls) this.callStatusChanged({ calls: reply.calls })
+        })
+    }
+
+    private callStatusChanged = ({ calls }: { calls: OngoingCall[] }) => {
+        if (!Array.isArray(calls)) return
+        this.update({ ongoingCalls: calls })
+        const ownJoinRequest = this.state.ownJoinRequest
+        if (ownJoinRequest?.pending && !calls.some((call) => call.callId === ownJoinRequest.callId)) {
+            this.endOwnJoinRequest('L’appel que vous vouliez rejoindre est terminé.')
+        }
+    }
+
+    requestToJoin = (callId: string) => {
+        if (this.active || this.state.connection !== 'ready' || this.state.ownJoinRequest?.pending) return
+        this.update({ ownJoinRequest: { callId, pending: true, message: '' } })
+        clearTimeout(this.joinRequestDeadline)
+        this.joinRequestDeadline = setTimeout(() => this.endOwnJoinRequest('Votre demande est restée sans réponse.'), JOIN_REQUEST_TIMEOUT_MS)
+        this.socket.timeout(10000).emit('call:join-request', { callId }, (failure: Error | null, reply?: CallReply) => {
+            if (this.state.ownJoinRequest?.callId !== callId || !this.state.ownJoinRequest.pending) return
+            if (failure || reply?.error) this.endOwnJoinRequest(reply?.error || 'La demande n’a pas été transmise. Réessayez.')
+        })
+    }
+
+    dismissJoinRequestMessage = () => {
+        if (!this.state.ownJoinRequest?.pending) this.clearOwnJoinRequest()
+    }
+
+    private endOwnJoinRequest(message: string) {
+        clearTimeout(this.joinRequestDeadline)
+        const ownJoinRequest = this.state.ownJoinRequest
+        if (ownJoinRequest) this.update({ ownJoinRequest: { ...ownJoinRequest, pending: false, message } })
+    }
+
+    private clearOwnJoinRequest() {
+        clearTimeout(this.joinRequestDeadline)
+        if (this.state.ownJoinRequest) this.update({ ownJoinRequest: null })
+    }
+
+    private joinRequestReceived = ({ callId, requester }: { callId: string; requester: Collaborator }) => {
+        if (!this.active || callId !== this.callId || !requester?.clientId) return
+        const otherRequests = this.state.receivedJoinRequests.filter((current) => current.clientId !== requester.clientId)
+        this.update({ receivedJoinRequests: [...otherRequests, requester] })
+    }
+
+    private joinRequestDeclined = ({ callId, requesterClientId }: { callId: string; requesterClientId: string }) => {
+        if (requesterClientId === this.socket.id) {
+            if (this.state.ownJoinRequest?.callId === callId) this.endOwnJoinRequest('Votre demande pour rejoindre l’appel a été refusée.')
+            return
+        }
+        this.forgetJoinRequest(requesterClientId)
+    }
+
+    private forgetJoinRequest(clientId: string) {
+        if (!this.state.receivedJoinRequests.some((requester) => requester.clientId === clientId)) return
+        this.update({ receivedJoinRequests: this.state.receivedJoinRequests.filter((requester) => requester.clientId !== clientId) })
+    }
+
+    acceptJoinRequest = (requester: Collaborator) => {
+        this.forgetJoinRequest(requester.clientId)
+        const collaborator = this.state.collaborators.find((current) => current.clientId === requester.clientId)
+        if (collaborator) this.invite(collaborator)
+    }
+
+    declineJoinRequest = (requester: Collaborator) => {
+        this.forgetJoinRequest(requester.clientId)
+        if (this.socket.connected) this.socket.emit('call:join-decline', { requesterClientId: requester.clientId })
     }
 
     documentFailed = (message: string) => {
@@ -182,6 +276,7 @@ export class AudioCallClient {
             const collaborators = new Map(this.state.collaborators.map((collaborator) => [collaborator.clientId, collaborator]))
             reply.collaborators.forEach((collaborator) => collaborators.set(collaborator.clientId, collaborator))
             this.update({ connection: 'ready', collaborators: [...collaborators.values()] })
+            this.refreshCallStatus()
         })
     }
 
@@ -193,7 +288,8 @@ export class AudioCallClient {
 
     private disconnected = () => {
         this.finish('error', 'Connexion au serveur perdue. L’appel est terminé.', false)
-        this.update({ connection: 'error', connectionError: 'Connexion perdue. Reconnexion en cours…', collaborators: [] })
+        this.clearOwnJoinRequest()
+        this.update({ connection: 'error', connectionError: 'Connexion perdue. Reconnexion en cours…', collaborators: [], ongoingCalls: [] })
     }
 
     private connectionFailed = (failure: Error) => {
@@ -212,6 +308,7 @@ export class AudioCallClient {
     private removePresence = ({ clientId }: { clientId: string }) => {
         const name = this.getName(clientId)
         this.update({ collaborators: this.state.collaborators.filter((collaborator) => collaborator.clientId !== clientId) })
+        this.forgetJoinRequest(clientId)
         this.dropMember(clientId, `${name} a quitté le document.`)
     }
 
@@ -252,6 +349,7 @@ export class AudioCallClient {
             return false
         }
         this.localStream = stream
+        this.update({ localAudioStream: stream })
         stream.getTracks().forEach((track) => {
             track.onended = () => {
                 if (this.isCurrent(generation)) this.finish('error', 'Le microphone a été déconnecté.')
@@ -420,8 +518,11 @@ export class AudioCallClient {
 
     private incoming = ({ callId, caller }: { callId: string; caller: Collaborator }) => {
         if (this.active) return
+        const isRequestedCall = Boolean(this.state.ownJoinRequest?.pending) && this.state.ownJoinRequest?.callId === callId
+        this.clearOwnJoinRequest()
         this.begin(caller, 'incoming')
         this.callId = callId
+        if (isRequestedCall) void this.accept()
     }
 
     accept = async () => {
@@ -464,6 +565,7 @@ export class AudioCallClient {
         if (!this.active || this.callId !== callId || !this.localStream) return
         const collaborator = this.state.collaborators.find((current) => current.clientId === clientId)
         if (!collaborator) return
+        this.forgetJoinRequest(clientId)
         this.addMember(collaborator)
         this.createLink(clientId, this.generation, false)
         if (this.state.status !== 'connected') {
@@ -604,11 +706,12 @@ export class AudioCallClient {
         this.stopCamera()
         this.localStream?.getTracks().forEach((track) => { track.onended = null; track.stop() })
         this.localStream = null
-        this.update({ status, message, muted: false, callMembers: [], invitedClientIds: [] })
+        this.update({ status, message, muted: false, localAudioStream: null, callMembers: [], invitedClientIds: [], receivedJoinRequests: [] })
     }
 
     dispose() {
         this.finish('ended', '')
+        clearTimeout(this.joinRequestDeadline)
         this.disposed = true
         this.socket.off('connect', this.join)
         this.socket.off('disconnect', this.disconnected)
@@ -622,6 +725,9 @@ export class AudioCallClient {
         this.socket.off('call:camera', this.peerCameraChanged)
         this.socket.off('call:left', this.left)
         this.socket.off('call:ended', this.ended)
+        this.socket.off('call:status', this.callStatusChanged)
+        this.socket.off('call:join-request', this.joinRequestReceived)
+        this.socket.off('call:join-declined', this.joinRequestDeclined)
         if (this.managesDocument) {
             if (this.socket.connected) this.socket.emit('document:leave')
             this.socket.disconnect()

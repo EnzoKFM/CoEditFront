@@ -157,6 +157,13 @@ Les variables `VITE_*` sont visibles dans le navigateur : utiliser des identifia
 limités dans le temps, jamais un secret d’administration. Aucun serveur TURN n’est fourni par ce dépôt.
 Redémarrer Vite après un changement de `.env`.
 
+### Indicateur de parole
+
+Pendant un appel, un halo vert entoure la tuile et l’avatar de la personne qui parle, vous compris.
+Il s’allume dès que sa voix dépasse un seuil et s’éteint 350 ms après la fin de la parole.
+Chaque navigateur analyse localement les flux audio avec la Web Audio API (`useSpeakingParticipants`) :
+aucun événement Socket.IO n’est ajouté. Un micro coupé n’affiche jamais le halo.
+
 Si le navigateur bloque la lecture automatique, un bouton « Activer le son » apparaît.
 Les erreurs de micro, les appels refusés, les délais dépassés et les coupures sont affichés dans le panneau du document.
 
@@ -171,14 +178,15 @@ npm run test:files
 ```
 
 Les tests audio du front couvrent la présence, l’annulation pendant la demande de micro,
-le refus d’autorisation, l’ordre des candidats ICE, la coupure du micro et le nettoyage des connexions.
+le refus d’autorisation, l’ordre des candidats ICE, la coupure du micro, le nettoyage des connexions
+et la détection de parole (seuil et délai d’extinction).
 Ils utilisent des doublures de Socket.IO et du navigateur.
 Les tests documents couvrent les frappes concurrentes, les retards réseau, les annulations, la reconnexion et le rendu Markdown.
 Les tests fichiers couvrent la distinction document texte / fichier binaire, le choix de l’aperçu et l’affichage des tailles.
 Les tests du back se lancent séparément dans son conteneur Docker.
 
 Pour vérifier un appel complet, ouvrir le même fichier dans deux sessions authentifiées,
-appeler puis accepter. Tester le son dans les deux sens, le bouton micro, le raccrochage,
+appeler puis accepter. Tester le son dans les deux sens, le halo de parole, le bouton micro, le raccrochage,
 le refus, le changement de fichier et la sortie de la page. Vérifier que l’édition fonctionne pendant l’appel et après le raccrochage. Utiliser un casque pour éviter l’écho.
 
 `/audio-call.html` conserve la démo visuelle des appels simulés. Elle n’est pas incluse dans le build principal.
