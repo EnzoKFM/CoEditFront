@@ -27,7 +27,7 @@ export function ShareFolderDialog({ folderId, folderName, onClose }: ShareFolder
     const [inviteeEmail, setInviteeEmail] = useState('')
     const [newSharePermission, setNewSharePermission] = useState<SharePermission>('read')
     const [isSubmitting, setIsSubmitting] = useState(false)
-    const [pendingUserId, setPendingUserId] = useState<number | null>(null)
+    const [pendingUserIds, setPendingUserIds] = useState<number[]>([])
     const [errorMessage, setErrorMessage] = useState('')
 
     useEffect(() => {
@@ -35,10 +35,14 @@ export function ShareFolderDialog({ folderId, folderName, onClose }: ShareFolder
     }, [])
 
     useEffect(() => {
+        let isCurrentRequest = true
         listFolderShares(folderId)
-            .then(setShares)
-            .catch((error) => setErrorMessage(getErrorMessage(error)))
-            .finally(() => setIsLoadingShares(false))
+            .then((loadedShares) => isCurrentRequest && setShares(loadedShares))
+            .catch((error) => isCurrentRequest && setErrorMessage(getErrorMessage(error)))
+            .finally(() => isCurrentRequest && setIsLoadingShares(false))
+        return () => {
+            isCurrentRequest = false
+        }
     }, [folderId])
 
     async function submitShare(event: FormEvent<HTMLFormElement>) {
@@ -58,7 +62,7 @@ export function ShareFolderDialog({ folderId, folderName, onClose }: ShareFolder
     }
 
     async function changeSharePermission(userId: number, permission: SharePermission) {
-        setPendingUserId(userId)
+        setPendingUserIds((currentIds) => [userId, ...currentIds])
         setErrorMessage('')
         try {
             const updatedShare = await updateFolderShare(folderId, userId, permission)
@@ -66,12 +70,16 @@ export function ShareFolderDialog({ folderId, folderName, onClose }: ShareFolder
         } catch (error) {
             setErrorMessage(getErrorMessage(error))
         } finally {
-            setPendingUserId(null)
+            setPendingUserIds((currentIds) => currentIds.filter((pendingUserId) => pendingUserId !== userId))
         }
     }
 
     async function removeShare(userId: number) {
-        setPendingUserId(userId)
+        const removedShare = shares.find((share) => share.userId === userId)
+        if (removedShare && !window.confirm(`Retirer l’accès de ${removedShare.firstName} ${removedShare.lastName} (${removedShare.email}) ?`)) {
+            return
+        }
+        setPendingUserIds((currentIds) => [userId, ...currentIds])
         setErrorMessage('')
         try {
             await deleteFolderShare(folderId, userId)
@@ -79,7 +87,7 @@ export function ShareFolderDialog({ folderId, folderName, onClose }: ShareFolder
         } catch (error) {
             setErrorMessage(getErrorMessage(error))
         } finally {
-            setPendingUserId(null)
+            setPendingUserIds((currentIds) => currentIds.filter((pendingUserId) => pendingUserId !== userId))
         }
     }
 
@@ -128,7 +136,7 @@ export function ShareFolderDialog({ folderId, folderName, onClose }: ShareFolder
             <h3 className="mt-6 text-sm font-semibold text-slate-900">Utilisateurs ayant accès</h3>
             {isLoadingShares ? (
                 <p className="mt-2 text-sm text-slate-500">Chargement…</p>
-            ) : shares.length === 0 ? (
+            ) : shares.length === 0 && !errorMessage ? (
                 <p className="mt-2 text-sm text-slate-500">Ce dossier n’est partagé avec personne.</p>
             ) : (
                 <ul className="mt-2 divide-y divide-slate-200">
@@ -142,7 +150,7 @@ export function ShareFolderDialog({ folderId, folderName, onClose }: ShareFolder
                                 <select
                                     aria-label={`Permission de ${share.email}`}
                                     value={share.permission}
-                                    disabled={pendingUserId === share.userId}
+                                    disabled={pendingUserIds.includes(share.userId)}
                                     onChange={(event) => changeSharePermission(share.userId, event.target.value as SharePermission)}
                                     className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-900 disabled:opacity-60"
                                 >
@@ -150,7 +158,7 @@ export function ShareFolderDialog({ folderId, folderName, onClose }: ShareFolder
                                         <option key={sharePermission} value={sharePermission}>{sharePermissionLabels[sharePermission]}</option>
                                     ))}
                                 </select>
-                                <Button variant="danger" className="px-3 py-1.5" disabled={pendingUserId === share.userId} onClick={() => removeShare(share.userId)}>
+                                <Button variant="danger" className="px-3 py-1.5" disabled={pendingUserIds.includes(share.userId)} onClick={() => removeShare(share.userId)}>
                                     Retirer
                                 </Button>
                             </div>

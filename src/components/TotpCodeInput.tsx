@@ -19,13 +19,12 @@ export function TotpCodeInput({ id, value, onChange, autoFocus = false }: TotpCo
         type="text"
         inputMode="numeric"
         autoComplete="one-time-code"
-        maxLength={7}
         placeholder="123 456"
         required
         autoFocus={autoFocus}
         value={value}
-        // Seuls les chiffres et les espaces sont gardés (l'API accepte "123 456")
-        onChange={(event) => onChange(event.target.value.replace(/[^\d ]/g, ''))}
+        // Seuls les chiffres sont gardés, tronqués à 6 (un collage "123 456" ou "123-456" reste valide)
+        onChange={(event) => onChange(event.target.value.replace(/\D/g, '').slice(0, 6))}
         className={`${inputClass} text-center font-mono text-lg tracking-widest`}
       />
     </div>

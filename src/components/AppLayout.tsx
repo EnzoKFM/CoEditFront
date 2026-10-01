@@ -15,15 +15,22 @@ export function AppLayout() {
   const registerLeaveGuard = useCallback((guard: (() => boolean) | null) => { leaveGuard.current = guard; }, []);
   const [logoutErrorMessage, setLogoutErrorMessage] = useState('');
 
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
   async function confirmLogout() {
+    if (isLoggingOut) {
+      return;
+    }
     if (leaveGuard.current && !leaveGuard.current()) {
       return;
     }
     setLogoutErrorMessage('');
+    setIsLoggingOut(true);
     try {
       await logout();
     } catch (error) {
       setLogoutErrorMessage(`Déconnexion impossible : ${getErrorMessage(error)}`);
+      setIsLoggingOut(false);
     }
   }
 
@@ -61,7 +68,8 @@ export function AppLayout() {
             <button
               type="button"
               onClick={() => void confirmLogout()}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 font-medium text-slate-700 transition hover:bg-slate-100"
+              disabled={isLoggingOut}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Se déconnecter
             </button>

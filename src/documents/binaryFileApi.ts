@@ -1,4 +1,8 @@
-import { apiFetch, apiFetchBlob } from '../lib/api'
+import { ApiError, apiFetch, apiFetchBlob } from '../lib/api'
+
+const BINARY_FILE_MAX_BYTES = 20 * 1024 * 1024
+
+const rejectOversizedFile = () => Promise.reject(new ApiError(413, 'Fichier trop volumineux (20 Mo maximum)'))
 
 export type NodePermission = 'owner' | 'read' | 'write' | 'delete'
 
@@ -18,6 +22,7 @@ export interface FileNodeDetails extends FileNode {
 }
 
 export function uploadBinaryFile(uploadedFile: File, parentId: number | null): Promise<FileNode> {
+    if (uploadedFile.size > BINARY_FILE_MAX_BYTES) return rejectOversizedFile()
     const uploadFormData = new FormData()
     if (parentId !== null) uploadFormData.append('parentId', String(parentId))
     uploadFormData.append('file', uploadedFile)
@@ -25,6 +30,7 @@ export function uploadBinaryFile(uploadedFile: File, parentId: number | null): P
 }
 
 export function replaceBinaryFile(fileId: number, replacementFile: File): Promise<FileNode> {
+    if (replacementFile.size > BINARY_FILE_MAX_BYTES) return rejectOversizedFile()
     const replacementFormData = new FormData()
     replacementFormData.append('file', replacementFile)
     return apiFetch<FileNode>(`/api/files/${fileId}/binary`, { method: 'PUT', body: replacementFormData })

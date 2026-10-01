@@ -66,7 +66,8 @@ export function DocumentEditor({ content, onChange, editable = true, canUndo, ca
 
     useEffect(() => subscribeRemote((operation) => {
         const input = textarea.current
-        if (!input) return
+        const changesText = operation.some((component) => ('insert' in component && component.insert !== '') || ('delete' in component && component.delete > 0))
+        if (!input || !changesText) return
         const current = selection.current ?? { start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection }
         selection.current = { start: transformIndex(current.start, operation), end: transformIndex(current.end, operation), direction: current.direction }
     }), [subscribeRemote])
