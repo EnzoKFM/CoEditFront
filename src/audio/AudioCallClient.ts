@@ -4,7 +4,13 @@ import type { CallStatus } from '../components/call/types'
 import type { Collaborator } from '../documents/types'
 export type { Collaborator } from '../documents/types'
 
-export const MAX_CALL_MEMBERS = 6
+export const MAX_CALL_MEMBERS = 12
+export const MAX_CALL_CAMERAS = 6
+
+const UPLINK_ESTIMATE_INTERVAL_MS = 5000
+const UPLINK_USABLE_SHARE = 0.85
+const AUDIO_RESERVED_BITRATE = 50_000
+const MIN_VIDEO_BITRATE = 150_000
 
 interface CallSignal {
     clientId: string
@@ -27,6 +33,7 @@ export interface CallMember {
     collaborator: Collaborator
     connected: boolean
     muted: boolean
+    cameraOn: boolean
     stream: MediaStream | null
 }
 
@@ -39,11 +46,14 @@ export interface AudioCallState {
     callMembers: CallMember[]
     invitedClientIds: string[]
     muted: boolean
+    cameraOn: boolean
+    localVideoStream: MediaStream | null
     message: string
 }
 
 interface CallResources {
     acquireMicrophone: () => Promise<MediaStream>
+    acquireCamera: () => Promise<MediaStream>
     createPeer: () => RTCPeerConnection
 }
 
@@ -51,7 +61,35 @@ interface PeerLink {
     peer: RTCPeerConnection
     candidates: RTCIceCandidateInit[]
     signalQueue: Promise<void>
+    videoSender: RTCRtpSender | null
+    remoteTracks: MediaStreamTrack[]
     disconnectDeadline?: ReturnType<typeof setTimeout>
+}
+
+function getVideoEncoding(participantCount: number) {
+    if (participantCount <= 2) return { maxBitrate: 2_500_000, maxFramerate: 30 }
+    if (participantCount <= 4) return { maxBitrate: 1_000_000, maxFramerate: 30 }
+    if (participantCount <= 6) return { maxBitrate: 500_000, maxFramerate: 24 }
+    return { maxBitrate: 300_000, maxFramerate: 15 }
+}
+
+async function readAvailableOutgoingBitrate(peer: RTCPeerConnection): Promise<number | null> {
+    const report = await peer.getStats()
+    const availableOutgoingBitrates: number[] = []
+    report.forEach((stat) => {
+        if (stat.type === 'candidate-pair' && stat.nominated && stat.state === 'succeeded' && typeof stat.availableOutgoingBitrate === 'number') {
+            availableOutgoingBitrates.push(stat.availableOutgoingBitrate)
+        }
+    })
+    return availableOutgoingBitrates.at(-1) ?? null
+}
+
+function getCameraErrorMessage(failure: unknown) {
+    const name = failure instanceof Error ? failure.name : ''
+    if (name === 'NotAllowedError') return 'Accès à la caméra refusé. Autorisez-le dans les paramètres du navigateur.'
+    if (name === 'NotFoundError') return 'Aucune caméra trouvée. L’appel continue en audio.'
+    if (name === 'NotReadableError') return 'La caméra est déjà utilisée par une autre application.'
+    return 'Impossible d’allumer la caméra. L’appel continue en audio.'
 }
 
 export class AudioCallClient {
@@ -66,11 +104,16 @@ export class AudioCallClient {
     private callId: string | null = null
     private active = false
     private localStream: MediaStream | null = null
+    private cameraTrack: MediaStreamTrack | null = null
+    private cameraPending = false
     private links = new Map<string, PeerLink>()
+    private estimatedUplinkBitrate: number | null = null
+    private uplinkEstimateTimer: ReturnType<typeof setInterval> | undefined
     private deadline: ReturnType<typeof setTimeout> | undefined
     private state: AudioCallState = {
         connection: 'connecting', connectionError: '', collaborators: [],
-        status: 'idle', participant: null, callMembers: [], invitedClientIds: [], muted: false, message: '',
+        status: 'idle', participant: null, callMembers: [], invitedClientIds: [], muted: false,
+        cameraOn: false, localVideoStream: null, message: '',
     }
 
     constructor(socket: Socket, fileId: number, userName: string, resources: CallResources, managesDocument = true) {
@@ -93,6 +136,7 @@ export class AudioCallClient {
         socket.on('call:accepted', this.accepted)
         socket.on('call:signal', this.receiveSignal)
         socket.on('call:mute', this.peerMuteChanged)
+        socket.on('call:camera', this.peerCameraChanged)
         socket.on('call:left', this.left)
         socket.on('call:ended', this.ended)
         if (this.managesDocument) socket.connect()
@@ -182,7 +226,10 @@ export class AudioCallClient {
         this.active = true
         this.update({ participant, status, muted: false, message: '', callMembers: [], invitedClientIds: [] })
         this.setDeadline('L’appel n’a pas abouti. Vous pouvez réessayer.', 60000)
-        return this.generation
+        const generation = this.generation
+        clearInterval(this.uplinkEstimateTimer)
+        this.uplinkEstimateTimer = setInterval(() => void this.estimateUplink(generation), UPLINK_ESTIMATE_INTERVAL_MS)
+        return generation
     }
 
     private isCurrent(generation: number) {
@@ -213,17 +260,20 @@ export class AudioCallClient {
         return true
     }
 
-    private createLink(clientId: string, generation: number) {
+    private createLink(clientId: string, generation: number, isOfferer: boolean) {
         const peer = this.resources.createPeer()
-        const link: PeerLink = { peer, candidates: [], signalQueue: Promise.resolve() }
+        const link: PeerLink = { peer, candidates: [], signalQueue: Promise.resolve(), videoSender: null, remoteTracks: [] }
         this.links.set(clientId, link)
         const stream = this.localStream
         stream?.getTracks().forEach((track) => peer.addTrack(track, stream))
+        if (isOfferer) link.videoSender = peer.addTransceiver(this.cameraTrack ?? 'video', { direction: 'sendrecv' }).sender
         peer.onicecandidate = ({ candidate }) => {
             if (candidate && this.isLinkCurrent(generation, clientId, link)) this.sendSignal(clientId, { candidate: candidate.toJSON() })
         }
-        peer.ontrack = ({ streams }) => {
-            if (this.isLinkCurrent(generation, clientId, link) && streams[0]) this.updateMember(clientId, { stream: streams[0] })
+        peer.ontrack = ({ track }) => {
+            if (!this.isLinkCurrent(generation, clientId, link)) return
+            link.remoteTracks = [...link.remoteTracks.filter((remoteTrack) => remoteTrack.kind !== track.kind), track]
+            this.updateMember(clientId, { stream: new MediaStream(link.remoteTracks) })
         }
         peer.onconnectionstatechange = () => {
             if (!this.isLinkCurrent(generation, clientId, link)) return
@@ -232,6 +282,7 @@ export class AudioCallClient {
                 clearTimeout(link.disconnectDeadline)
                 this.updateMember(clientId, { connected: true })
                 this.update({ status: 'connected', message: '' })
+                this.applyVideoEncoding()
             } else if (peer.connectionState === 'failed') {
                 this.dropMember(clientId, `La connexion audio avec ${this.getName(clientId)} a échoué.`)
             } else if (peer.connectionState === 'disconnected') {
@@ -241,6 +292,42 @@ export class AudioCallClient {
             }
         }
         return link
+    }
+
+    private attachVideoSender(link: PeerLink) {
+        if (link.videoSender) return
+        const transceiver = link.peer.getTransceivers().find((current) => current.receiver.track.kind === 'video')
+        if (!transceiver) return
+        transceiver.direction = 'sendrecv'
+        link.videoSender = transceiver.sender
+        if (this.cameraTrack) void transceiver.sender.replaceTrack(this.cameraTrack).catch(() => {})
+    }
+
+    private async estimateUplink(generation: number) {
+        const estimates = await Promise.all([...this.links.values()].map((link) => readAvailableOutgoingBitrate(link.peer).catch(() => null)))
+        if (!this.isCurrent(generation)) return
+        const knownEstimates = estimates.filter((estimate): estimate is number => estimate !== null)
+        this.estimatedUplinkBitrate = knownEstimates.length > 0 ? Math.min(...knownEstimates) : null
+        this.applyVideoEncoding()
+    }
+
+    private applyVideoEncoding() {
+        const encoding = getVideoEncoding(this.state.callMembers.length + 1)
+        const videoLinkCount = this.links.size
+        const uplinkShare = this.estimatedUplinkBitrate === null || videoLinkCount < 2
+            ? Infinity
+            : (this.estimatedUplinkBitrate * UPLINK_USABLE_SHARE) / videoLinkCount - AUDIO_RESERVED_BITRATE
+        const maxBitrate = Math.round(Math.max(MIN_VIDEO_BITRATE, Math.min(encoding.maxBitrate, uplinkShare)))
+        const maxFramerate = encoding.maxFramerate
+        for (const link of this.links.values()) {
+            const sender = link.videoSender
+            if (!sender) continue
+            const parameters = sender.getParameters()
+            if (!parameters.encodings?.length) continue
+            parameters.encodings[0].maxBitrate = maxBitrate
+            parameters.encodings[0].maxFramerate = maxFramerate
+            void sender.setParameters(parameters).catch(() => {})
+        }
     }
 
     private closeLink(clientId: string) {
@@ -254,9 +341,12 @@ export class AudioCallClient {
     private addMember(collaborator: Collaborator) {
         const callMembers = this.state.callMembers.filter((member) => member.collaborator.clientId !== collaborator.clientId)
         this.update({
-            callMembers: [...callMembers, { collaborator, connected: false, muted: false, stream: null }],
+            callMembers: [...callMembers, { collaborator, connected: false, muted: false, cameraOn: false, stream: null }],
             invitedClientIds: this.state.invitedClientIds.filter((clientId) => clientId !== collaborator.clientId),
         })
+        if (!this.socket.connected) return
+        if (this.state.muted) this.socket.emit('call:mute', { muted: true })
+        if (this.cameraTrack) this.socket.emit('call:camera', { enabled: true }, () => {})
     }
 
     private updateMember(clientId: string, patch: Partial<CallMember>) {
@@ -277,6 +367,7 @@ export class AudioCallClient {
         }
         const status = callMembers.some((member) => member.connected) ? 'connected' : callMembers.length > 0 ? 'connecting' : 'outgoing'
         this.update({ callMembers, invitedClientIds, status, message })
+        this.applyVideoEncoding()
     }
 
     private mediaFailed(failure: unknown, generation: number) {
@@ -358,7 +449,7 @@ export class AudioCallClient {
     }
 
     private sendOffer(clientId: string, generation: number) {
-        const link = this.createLink(clientId, generation)
+        const link = this.createLink(clientId, generation, true)
         void (async () => {
             const offer = await link.peer.createOffer()
             if (!this.isLinkCurrent(generation, clientId, link)) return
@@ -374,7 +465,7 @@ export class AudioCallClient {
         const collaborator = this.state.collaborators.find((current) => current.clientId === clientId)
         if (!collaborator) return
         this.addMember(collaborator)
-        this.createLink(clientId, this.generation)
+        this.createLink(clientId, this.generation, false)
         if (this.state.status !== 'connected') {
             this.update({ status: 'connecting', message: '' })
             this.setDeadline('La connexion audio prend trop de temps. Réessayez.', 30000)
@@ -401,6 +492,7 @@ export class AudioCallClient {
                     if (!this.isLinkCurrent(generation, clientId, link)) return
                 }
                 if (signal.description.type === 'offer') {
+                    this.attachVideoSender(link)
                     const answer = await peer.createAnswer()
                     if (!this.isLinkCurrent(generation, clientId, link)) return
                     await peer.setLocalDescription(answer)
@@ -441,6 +533,58 @@ export class AudioCallClient {
         if (this.active) this.updateMember(clientId, { muted })
     }
 
+    toggleCamera = async () => {
+        if (!this.active || !this.localStream || this.state.status === 'incoming' || this.cameraPending) return
+        if (this.cameraTrack) {
+            this.stopCamera()
+            return
+        }
+        const generation = this.generation
+        this.cameraPending = true
+        try {
+            const stream = await this.resources.acquireCamera()
+            const [track] = stream.getVideoTracks()
+            const stopStream = () => stream.getTracks().forEach((streamTrack) => streamTrack.stop())
+            if (!this.isCurrent(generation) || !track) {
+                stopStream()
+                return
+            }
+            const reply: { enabled?: boolean; error?: string } = await this.socket.timeout(10000).emitWithAck('call:camera', { enabled: true })
+                .catch(() => ({ error: 'Le serveur n’a pas confirmé l’allumage de la caméra.' }))
+            if (!this.isCurrent(generation) || reply.error) {
+                stopStream()
+                if (reply.error && this.isCurrent(generation)) this.update({ message: reply.error })
+                return
+            }
+            this.cameraTrack = track
+            track.onended = () => {
+                if (this.cameraTrack === track) this.stopCamera()
+            }
+            for (const link of this.links.values()) void link.videoSender?.replaceTrack(track).catch(() => {})
+            this.update({ cameraOn: true, localVideoStream: new MediaStream([track]) })
+            this.applyVideoEncoding()
+        } catch (failure) {
+            if (this.isCurrent(generation)) this.update({ message: getCameraErrorMessage(failure) })
+        } finally {
+            this.cameraPending = false
+        }
+    }
+
+    private stopCamera() {
+        const track = this.cameraTrack
+        if (!track) return
+        this.cameraTrack = null
+        track.onended = null
+        track.stop()
+        for (const link of this.links.values()) void link.videoSender?.replaceTrack(null).catch(() => {})
+        this.update({ cameraOn: false, localVideoStream: null })
+        if (this.active && this.socket.connected) this.socket.emit('call:camera', { enabled: false }, () => {})
+    }
+
+    private peerCameraChanged = ({ clientId, enabled }: { clientId: string; enabled: boolean }) => {
+        if (this.active) this.updateMember(clientId, { cameraOn: enabled })
+    }
+
     hangUp = () => this.finish('ended', 'Appel terminé.')
 
     reset = () => {
@@ -454,7 +598,10 @@ export class AudioCallClient {
         this.generation += 1
         this.callId = null
         clearTimeout(this.deadline)
+        clearInterval(this.uplinkEstimateTimer)
+        this.estimatedUplinkBitrate = null
         for (const clientId of [...this.links.keys()]) this.closeLink(clientId)
+        this.stopCamera()
         this.localStream?.getTracks().forEach((track) => { track.onended = null; track.stop() })
         this.localStream = null
         this.update({ status, message, muted: false, callMembers: [], invitedClientIds: [] })
@@ -472,6 +619,7 @@ export class AudioCallClient {
         this.socket.off('call:accepted', this.accepted)
         this.socket.off('call:signal', this.receiveSignal)
         this.socket.off('call:mute', this.peerMuteChanged)
+        this.socket.off('call:camera', this.peerCameraChanged)
         this.socket.off('call:left', this.left)
         this.socket.off('call:ended', this.ended)
         if (this.managesDocument) {
