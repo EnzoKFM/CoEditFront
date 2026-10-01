@@ -280,3 +280,13 @@ test('le remontage StrictMode conserve les abonnés et ne duplique pas les invit
     assert.equal(changes, changesBeforeInvite + 1)
     assert.equal(session.audio.getSnapshot().status, 'incoming')
 })
+
+test('expose le flux du micro local pendant l’appel et l’oublie au raccrochage', async (context) => {
+    const { client, socket, stream } = setup()
+    context.after(() => client.dispose())
+    assert.equal(client.getSnapshot().localAudioStream, null)
+    await client.start(participant)
+    assert.equal(client.getSnapshot().localAudioStream, stream)
+    socket.receive('call:ended', { callId: 'call-1', reason: 'hangup' })
+    assert.equal(client.getSnapshot().localAudioStream, null)
+})
