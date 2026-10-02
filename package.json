@@ -3,20 +3,33 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test:audio": "node --test tests/audioCallClient.test.mjs tests/speakingDetector.test.mjs",
+    "test:documents": "node --test tests/documentSessionClient.test.mjs",
+    "test:files": "node --test tests/binaryFileKind.test.mjs",
+    "test:ringtone": "node --test tests/ringtone.test.mjs",
+    "test:dates": "node --test tests/formatDate.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "dompurify": "^3.4.16",
+    "markdown-it": "^15.0.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.4",
+    "socket.io-client": "^4.8.4",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/markdown-it": "^14.2.0",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",

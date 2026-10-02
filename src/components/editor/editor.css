@@ -1,0 +1,28 @@
+.coedit-content {
+    min-height: 420px;
+    padding: 1.25rem;
+    line-height: 1.75;
+    overflow-wrap: anywhere;
+    color: #334155;
+}
+
+.coedit-content:focus-visible { outline: 2px solid #818cf8; outline-offset: -2px; }
+.coedit-content > * + * { margin-top: 1rem; }
+.coedit-content h1, .coedit-content h2, .coedit-content h3 { font-weight: 650; line-height: 1.3; color: #0f172a; }
+.coedit-content h1 { font-size: 2rem; }
+.coedit-content h2 { font-size: 1.5rem; }
+.coedit-content h3 { font-size: 1.2rem; }
+.coedit-content ul, .coedit-content ol { padding-left: 1.5rem; }
+.coedit-content ul { list-style: disc; }
+.coedit-content ol { list-style: decimal; }
+.coedit-content li > p { margin: .25rem 0; }
+.coedit-content blockquote { border-left: 3px solid #a5b4fc; padding-left: 1rem; color: #64748b; }
+.coedit-content a { color: #4338ca; text-decoration: underline; text-underline-offset: 3px; }
+.coedit-content code { border-radius: .25rem; padding: .15rem .3rem; background: #f1f5f9; font-size: .9em; }
+.coedit-content pre { overflow-x: auto; border-radius: .5rem; background: #0f172a; color: #e2e8f0; padding: 1rem; }
+.coedit-content pre code { background: none; padding: 0; color: inherit; }
+.coedit-content hr { border: 0; border-top: 1px solid #cbd5e1; margin-block: 1.5rem; }
+
+.coedit-content table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.coedit-content th, .coedit-content td { border: 1px solid #cbd5e1; padding: .5rem; }
+.coedit-content img { max-width: 100%; height: auto; }

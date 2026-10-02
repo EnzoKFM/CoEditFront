@@ -1,0 +1,75 @@
+// Vide par défaut : les appels partent en relatif (/api/...) et passent par le proxy de Vite.
+// À renseigner seulement si le front est servi sans ce proxy (ex : build de production sur un autre domaine).
+const API_URL = import.meta.env.VITE_API_URL ?? '';
+
+// Erreur renvoyée par l'API : status HTTP + message lisible
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+// Message à afficher à l'utilisateur : ceux des erreurs 4xx de l'API lui sont destinés,
+// pas ceux des 5xx (erreur interne) ni des erreurs inconnues.
+export function getErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.status < 500) {
+    return error.message;
+  }
+  return 'Une erreur est survenue, réessayez plus tard';
+}
+
+// Appel à l'API : envoie le cookie de session et transforme les erreurs en ApiError
+let unauthorizedListener: (() => void) | null = null;
+
+export function setUnauthorizedListener(listener: (() => void) | null) {
+  unauthorizedListener = listener;
+}
+
+export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers);
+  if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, { ...options, headers, credentials: 'include' });
+  } catch {
+    throw new ApiError(0, 'Impossible de joindre le serveur');
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const data = await response.json().catch(() => null);
+  if (response.status === 401) {
+    unauthorizedListener?.();
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status, data?.error ?? 'Une erreur inattendue est survenue');
+  }
+  return data as T;
+}
+
+export async function apiFetchBlob(path: string): Promise<Blob> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, { credentials: 'include' });
+  } catch {
+    throw new ApiError(0, 'Impossible de joindre le serveur');
+  }
+
+  if (response.status === 401) {
+    unauthorizedListener?.();
+  }
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null);
+    throw new ApiError(response.status, errorBody?.error ?? 'Une erreur inattendue est survenue');
+  }
+  return response.blob();
+}
