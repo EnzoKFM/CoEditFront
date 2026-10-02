@@ -4,6 +4,7 @@ import { CameraIcon, ExpandIcon, MicrophoneIcon, MinimizeIcon, UserPlusIcon, Cha
 import { getInitials } from './getInitials'
 import { ChatPanel } from '../chat/ChatPanel'
 import { JoinRequestBanner } from './JoinRequests'
+import { useDocumentChat } from '../../chat/useDocumentChat'
 
 interface Tile {
     id: string
@@ -203,17 +204,19 @@ function AddParticipantMenu({ client, state, onClose }: { client: AudioCallClien
     )
 }
 
-export function CallStage({ client, state, speakingParticipantIds, documentName, statusText, onMinimize }: {
+export function CallStage({ client, state, speakingParticipantIds, documentName, statusText, onMinimize, isChatOpen, onToggleChat, chat }: {
     client: AudioCallClient
     state: AudioCallState
     speakingParticipantIds: Set<string>
     documentName: string
     statusText: string
     onMinimize: () => void
+    isChatOpen: boolean
+    onToggleChat: () => void
+    chat: ReturnType<typeof useDocumentChat>
 }) {
     const stageRef = useRef<HTMLDivElement>(null)
     const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
-    const [isChatOpen, setIsChatOpen] = useState(false)
     const tiles = buildTiles(state)
 
     useEffect(() => {
@@ -284,8 +287,8 @@ export function CallStage({ client, state, speakingParticipantIds, documentName,
                 {isChatOpen && (
                     <div className="flex w-80 shrink-0 flex-col">
                         <ChatPanel
-                            socket={client.socket}
                             isJoined={state.connection === 'ready'}
+                            chat={chat}
                         />
                     </div>
                 )}
@@ -293,7 +296,7 @@ export function CallStage({ client, state, speakingParticipantIds, documentName,
             <footer className="relative flex shrink-0 items-center justify-center gap-3 px-4 py-4">
                 {isAddMenuOpen && <AddParticipantMenu client={client} state={state} onClose={() => setIsAddMenuOpen(false)} />}
                 <MediaButtons client={client} state={state} />
-                <RoundButton label={isChatOpen ? 'Fermer le chat' : 'Ouvrir le chat'}onClick={() => setIsChatOpen((isOpen) => !isOpen)}>
+                <RoundButton label={isChatOpen ? 'Fermer le chat' : 'Ouvrir le chat'}onClick={() => onToggleChat()}>
                     <ChatIcon />
                 </RoundButton>
                 <RoundButton label="Ajouter une personne" onClick={() => setIsAddMenuOpen((isOpen) => !isOpen)}>

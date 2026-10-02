@@ -9,6 +9,7 @@ import { getInitials } from './getInitials'
 import { JoinRequestBanner, OngoingCalls } from './JoinRequests'
 import { RemoteAudio } from './RemoteAudio'
 import { Button } from '../shared/Button'
+import { useDocumentChat } from '../../chat/useDocumentChat'
 
 const ACTIVE_CALL_STATUSES = ['incoming', 'outgoing', 'connecting', 'connected']
 const JOINED_CALL_STATUSES = ['outgoing', 'connecting', 'connected']
@@ -130,6 +131,8 @@ export function AudioCallRoom({ client, documentName, onRetry }: {
         ...state.callMembers.map((member) => ({ participantId: member.collaborator.clientId, stream: member.stream, isMicrophoneMuted: member.muted })),
     ])
     const [isStageMinimized, setIsStageMinimized] = useState(false)
+    const [isChatOpen, setIsChatOpen] = useState(false)
+    const chat = useDocumentChat(client.socket, state.connection === 'ready')
     const [wasInCall, setWasInCall] = useState(isInCall)
     if (wasInCall !== isInCall) {
         setWasInCall(isInCall)
@@ -288,12 +291,12 @@ export function AudioCallRoom({ client, documentName, onRetry }: {
             </section>
             {state.callMembers.map((member) => member.stream && <RemoteAudio key={member.collaborator.clientId} stream={member.stream} />)}
             {isInCall && !isStageMinimized && (
-                <CallStage client={client} state={state} speakingParticipantIds={speakingParticipantIds} documentName={documentName} statusText={getCallStatusText(state)} onMinimize={() => setIsStageMinimized(true)} />
+                <CallStage client={client} state={state} speakingParticipantIds={speakingParticipantIds} documentName={documentName} statusText={getCallStatusText(state)} onMinimize={() => setIsStageMinimized(true)} isChatOpen={isChatOpen} onToggleChat={() => setIsChatOpen((open) => !open)} chat={chat} />
             )}
             {isInCall && isStageMinimized && (
                 <CallMiniBar client={client} state={state} statusText={getCallStatusText(state)} onExpand={() => setIsStageMinimized(false)} />
             )}
-            <ChatPanel socket={client.socket} isJoined={state.connection === 'ready'} />
+            <ChatPanel isJoined={state.connection === 'ready'} chat={chat} />
         </div>
     )
 }

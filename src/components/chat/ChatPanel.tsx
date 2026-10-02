@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import type { Socket } from 'socket.io-client'
 import { useAuth } from '../../auth/authContext'
 import { MAX_CHAT_MESSAGE_LENGTH, useDocumentChat, type ChatMessage } from '../../chat/useDocumentChat'
 import { Button } from '../shared/Button'
@@ -12,9 +11,9 @@ function startsNewGroup(message: ChatMessage, previousMessage: ChatMessage | und
     return Date.parse(message.sentAt) - Date.parse(previousMessage.sentAt) > MESSAGE_GROUP_DELAY_MS
 }
 
-export function ChatPanel({ socket, isJoined }: { socket: Socket; isJoined: boolean }) {
+export function ChatPanel({isJoined, chat }: {isJoined: boolean; chat: ReturnType<typeof useDocumentChat> }) {
     const { user } = useAuth()
-    const { messages, error, isSending, sendMessage } = useDocumentChat(socket, isJoined)
+    const { messages, error, isSending, sendMessage } = chat
     const [draft, setDraft] = useState('')
     const listRef = useRef<HTMLUListElement>(null)
 
